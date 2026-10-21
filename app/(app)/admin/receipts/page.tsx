@@ -4,35 +4,48 @@ import { requireAdmin, type Profile } from '@/lib/auth'
 import { todayKST } from '@/lib/format'
 import { RECEIPT_STATUS_LABEL, priceChange, won, type PriceRow, type Receipt } from '@/lib/receipts'
 import { createClient } from '@/lib/supabase/server'
+import { ConfirmButton } from '@/app/components/confirm-button'
+import { sendUnsentToSheet } from './actions'
+
+// 안 보낸 전표를 한꺼번에 시트로 보낼 때 시간이 걸릴 수 있음
+export const maxDuration = 300
 
 const RECEIPT_LIST_SELECT =
   'id, photo_paths, note, created_by, created_at, status, proposal, ai_error, vendor, receipt_date, total_amount, close_reason'
 
-export default async function ReceiptListPage() {
+export default async function ReceiptListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string; ok?: string }>
+}) {
+  const { error, ok } = await searchParams
   await requireAdmin()
   const supabase = await createClient()
   const since = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
 
-  const [{ data: pendingData }, { data: doneData }, { data: priceData }, { data: profileData }] = await Promise.all([
-    supabase
-      .from('receipts')
-      .select(RECEIPT_LIST_SELECT)
-      .in('status', ['processing', 'proposed', 'failed'])
-      .order('created_at'),
-    supabase
-      .from('receipts')
-      .select(RECEIPT_LIST_SELECT)
-      .in('status', ['confirmed', 'rejected', 'void'])
-      .order('created_at', { ascending: false })
-      .limit(30),
-    supabase
-      .from('receipt_price_history')
-      .select('*')
-      .gte('receipt_date', since)
-      .not('prev_unit_price', 'is', null)
-      .order('receipt_date', { ascending: false }),
-    supabase.from('profiles').select('id, full_name'),
-  ])
+  const [{ data: pendingData }, { data: doneData }, { data: priceData }, { data: profileData }, { data: exportData }] =
+    await Promise.all([
+      supabase
+        .from('receipts')
+        .select(RECEIPT_LIST_SELECT)
+        .in('status', ['processing', 'proposed', 'failed'])
+        .order('created_at'),
+      supabase
+        .from('receipts')
+        .select(RECEIPT_LIST_SELECT)
+        .in('status', ['confirmed', 'rejected', 'void'])
+        .order('created_at', { ascending: false })
+        .limit(30),
+      supabase
+        .from('receipt_price_history')
+        .select('*')
+        .gte('receipt_date', since)
+        .not('prev_unit_price', 'is', null)
+        .order('receipt_date', { ascending: false }),
+      supabase.from('profiles').select('id, full_name'),
+      supabase.from('receipt_sheet_exports').select('receipt_id'),
+    ])
+  const sentIds = new Set((exportData ?? []).map((e) => e.receipt_id as number))
   const pending = (pendingData ?? []) as unknown as Receipt[]
   const done = (doneData ?? []) as unknown as Receipt[]
   const changes = ((priceData ?? []) as PriceRow[]).filter((p) => Number(p.prev_unit_price) !== Number(p.unit_price))
@@ -52,6 +65,21 @@ export default async function ReceiptListPage() {
       <td>{r.vendor ?? r.proposal?.vendor ?? '-'}</td>
       <td className="num">{won(r.total_amount ?? r.proposal?.total_amount)}</td>
       <td className="small">{r.close_reason ?? r.ai_error ?? r.note ?? ''}</td>
+      <td>
+        {r.status === 'confirmed' ? (
+          sentIds.has(r.id) ? (
+            <span className="badge badge-ok" style={{ marginLeft: 0 }}>
+              보냄
+            </span>
+          ) : (
+            <span className="badge" style={{ marginLeft: 0 }}>
+              안 보냄
+            </span>
+          )
+        ) : (
+          '-'
+        )}
+      </td>
     </tr>
   )
   const head = (
@@ -64,6 +92,7 @@ export default async function ReceiptListPage() {
       <th>거래처</th>
       <th>합계</th>
       <th>메모</th>
+      <th>구글 시트</th>
     </tr>
   )
 
@@ -76,6 +105,9 @@ export default async function ReceiptListPage() {
         전표는 사장님·관리자만 볼 수 있습니다.
       </p>
 
+      {error && <p className="alert alert-error">{error}</p>}
+      {ok && <p className="alert alert-ok">{ok}</p>}
+
       <h2>확인 대기 ({pending.length}건)</h2>
       <div className="table-wrap">
         <table>
@@ -84,7 +116,7 @@ export default async function ReceiptListPage() {
             {pending.map(row)}
             {pending.length === 0 && (
               <tr>
-                <td colSpan={8}>확인할 전표가 없습니다.</td>
+                <td colSpan={9}>확인할 전표가 없습니다.</td>
               </tr>
             )}
           </tbody>
@@ -135,7 +167,14 @@ export default async function ReceiptListPage() {
         </table>
       </div>
 
-      <h2>최근 처리된 전표</h2>
+      <div className="row" style={{ justifyContent: 'space-between', marginTop: 28 }}>
+        <h2 style={{ margin: 0 }}>최근 처리된 전표</h2>
+        <form action={sendUnsentToSheet}>
+          <ConfirmButton message="확정됐지만 아직 구글 시트로 안 보낸 전표를 모두 보낼까요?">
+            📤 안 보낸 전표 모두 구글 시트로
+          </ConfirmButton>
+        </form>
+      </div>
       <div className="table-wrap">
         <table>
           <thead>{head}</thead>
@@ -143,7 +182,7 @@ export default async function ReceiptListPage() {
             {done.map(row)}
             {done.length === 0 && (
               <tr>
-                <td colSpan={8}>아직 없습니다.</td>
+                <td colSpan={9}>아직 없습니다.</td>
               </tr>
             )}
           </tbody>

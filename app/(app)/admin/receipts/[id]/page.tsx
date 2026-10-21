@@ -7,7 +7,7 @@ import { formatTime } from '@/lib/format'
 import { RECEIPT_BUCKET } from '@/lib/receipt-ai'
 import { RECEIPT_STATUS_LABEL, priceChange, won, type PriceRow, type Receipt } from '@/lib/receipts'
 import { createClient } from '@/lib/supabase/server'
-import { closeReceipt, retryReceipt } from '../actions'
+import { closeReceipt, retryReceipt, sendToSheet } from '../actions'
 import { ConfirmForm } from './confirm-form'
 
 // [다시 읽기] 후 AI 읽기가 백그라운드로 돌기 때문에 넉넉히
@@ -30,11 +30,18 @@ export default async function ReceiptDetailPage({
   if (!data) notFound()
   const receipt = data as Receipt
 
-  const [{ data: urlData }, { data: profileData }, { data: priceData }] = await Promise.all([
+  const [{ data: urlData }, { data: profileData }, { data: priceData }, { data: exportData }] = await Promise.all([
     supabase.storage.from(RECEIPT_BUCKET).createSignedUrls(receipt.photo_paths, 60 * 60),
     supabase.from('profiles').select('id, full_name'),
     supabase.from('receipt_price_history').select('*').eq('receipt_id', id).order('id'),
+    supabase
+      .from('receipt_sheet_exports')
+      .select('sent_at, sent_by')
+      .eq('receipt_id', id)
+      .order('sent_at', { ascending: false })
+      .limit(1),
   ])
+  const lastExport = (exportData ?? [])[0] as { sent_at: string; sent_by: string } | undefined
   const names = Object.fromEntries(
     ((profileData ?? []) as Pick<Profile, 'id' | 'full_name'>[]).map((p) => [p.id, p.full_name]),
   )
@@ -157,6 +164,35 @@ export default async function ReceiptDetailPage({
                       })}
                     </tbody>
                   </table>
+                </div>
+              )}
+              {receipt.status === 'confirmed' && (
+                <div className="card" style={{ margin: '12px 0' }}>
+                  <div className="row" style={{ justifyContent: 'space-between' }}>
+                    <div>
+                      <strong>구글 시트</strong>{' '}
+                      {lastExport ? (
+                        <span className="badge badge-ok">
+                          보냄 · {lastExport.sent_at.slice(0, 10)} {formatTime(lastExport.sent_at)} ·{' '}
+                          {names[lastExport.sent_by] ?? '?'}
+                        </span>
+                      ) : (
+                        <span className="badge">아직 안 보냄</span>
+                      )}
+                    </div>
+                    <form action={sendToSheet}>
+                      <input type="hidden" name="id" value={id} />
+                      <SubmitWithConfirm
+                        message={
+                          lastExport
+                            ? '이미 보낸 전표입니다. 시트의 예전 줄을 지우고 다시 보낼까요?'
+                            : '이 전표를 구글 시트로 보낼까요? (사진도 함께 보냅니다)'
+                        }
+                      >
+                        {lastExport ? '구글 시트로 다시 보내기' : '📤 구글 시트로 보내기'}
+                      </SubmitWithConfirm>
+                    </form>
+                  </div>
                 </div>
               )}
               {receipt.status === 'confirmed' && (

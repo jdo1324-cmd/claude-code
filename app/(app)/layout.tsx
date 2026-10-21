@@ -28,6 +28,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           ? [
               { href: '/admin/sales', label: '월 매출' },
               { href: '/admin/pay', label: '급여' },
+              { href: '/admin/checklist-items', label: '체크리스트 설정' },
+              { href: '/admin/google-sheet', label: '구글 시트 연결' },
             ]
           : []),
       ]

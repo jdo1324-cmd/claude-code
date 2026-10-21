@@ -13,6 +13,7 @@ function safePath(value: FormDataEntryValue | null, fallback: string) {
 function backTo(path: string, key: 'ok' | 'error', message: string): never {
   revalidatePath('/checklist')
   revalidatePath('/admin/checklists')
+  revalidatePath('/admin/checklist-items')
   revalidatePath('/sales')
   redirect(path + (path.includes('?') ? '&' : '?') + key + '=' + encodeURIComponent(message))
 }
@@ -20,7 +21,9 @@ function backTo(path: string, key: 'ok' | 'error', message: string): never {
 // 체크 / 숫자 입력 항목 완료
 export async function completeItem(formData: FormData) {
   await getCurrentProfile()
-  const raw = String(formData.get('value') ?? '').replace(/,/g, '').trim()
+  const raw = String(formData.get('value') ?? '')
+    .replace(/,/g, '')
+    .trim()
   const value = raw === '' ? null : Number(raw)
   if (value !== null && Number.isNaN(value)) backTo('/checklist', 'error', '숫자만 입력하세요.')
 
@@ -47,6 +50,7 @@ export async function completePhotoItem(itemId: number, photoPath: string): Prom
   })
   revalidatePath('/checklist')
   revalidatePath('/admin/checklists')
+  revalidatePath('/admin/checklist-items')
   revalidatePath('/sales')
   return { error: error?.message ?? null }
 }
@@ -92,4 +96,39 @@ export async function setItemActive(formData: FormData) {
   })
   if (error) backTo(back, 'error', error.message)
   backTo(back, 'ok', formData.get('active') === '1' ? '항목을 다시 사용합니다.' : '항목을 사용 중지했습니다.')
+}
+
+export async function updateItem(formData: FormData) {
+  await requireOwner()
+  const back = safePath(formData.get('back'), '/admin/checklist-items')
+  const itemId = Number(formData.get('item_id'))
+  const supabase = await createClient()
+  const { data: newId, error } = await supabase.rpc('update_checklist_item', {
+    p_item_id: itemId,
+    p_category: String(formData.get('category') ?? ''),
+    p_title: String(formData.get('title') ?? ''),
+    p_item_type: String(formData.get('item_type') ?? ''),
+    p_unit: String(formData.get('unit') ?? ''),
+    p_is_required: formData.get('is_required') === 'on',
+  })
+  if (error) backTo(back, 'error', error.message)
+  backTo(
+    back,
+    'ok',
+    Number(newId) !== itemId
+      ? '종류가 바뀌어 새 항목으로 만들고, 기존 항목은 사용 중지했습니다. (지난 기록은 그대로 남습니다)'
+      : '항목을 수정했습니다.',
+  )
+}
+
+export async function moveItem(formData: FormData) {
+  await requireOwner()
+  const back = safePath(formData.get('back'), '/admin/checklist-items')
+  const supabase = await createClient()
+  const { error } = await supabase.rpc('move_checklist_item', {
+    p_item_id: Number(formData.get('item_id')),
+    p_direction: formData.get('direction') === 'up' ? -1 : 1,
+  })
+  if (error) backTo(back, 'error', error.message)
+  backTo(back, 'ok', '순서를 바꿨습니다.')
 }

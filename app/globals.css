@@ -972,3 +972,72 @@ th.num {
     animation: none;
   }
 }
+
+/* ---------- 체크리스트 항목 설정 ---------- */
+.item-row {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.item-row:last-child {
+  border-bottom: 0;
+}
+
+.item-fields {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+  max-width: 480px;
+}
+
+.item-fields label {
+  display: grid;
+  gap: 4px;
+}
+
+.item-fields .check-label {
+  display: block;
+  font-weight: 600;
+}
+
+/* 단위 칸은 "숫자 입력"을 골랐을 때만 보임 */
+.item-fields .unit-field {
+  display: none;
+}
+
+.item-fields:has(select[name='item_type'] option[value='number']:checked) .unit-field {
+  display: grid;
+}
+
+.icon-btn {
+  min-width: 40px;
+  min-height: 40px;
+  padding: 0;
+  font-size: 13px;
+}
+
+/* ---------- 구글 시트 연결 ---------- */
+.steps {
+  padding-left: 22px;
+}
+
+.steps > li {
+  margin: 10px 0;
+  overflow-wrap: anywhere;
+}
+
+.steps ul {
+  margin: 4px 0;
+}
+
+.code-block {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre;
+}

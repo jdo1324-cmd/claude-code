@@ -1,17 +1,9 @@
 import Link from 'next/link'
 import { ConfirmButton } from '@/app/components/confirm-button'
 import { RealtimeRefresh } from '@/app/components/realtime-refresh'
-import { addItem, setItemActive, voidEntry } from '@/app/(app)/checklist/actions'
+import { voidEntry } from '@/app/(app)/checklist/actions'
 import { requireAdmin } from '@/lib/auth'
-import {
-  PHASES,
-  PHASE_LABEL,
-  TYPE_LABEL,
-  formatValue,
-  loadChecklist,
-  progress,
-  type ChecklistItem,
-} from '@/lib/checklist'
+import { PHASES, PHASE_LABEL, TYPE_LABEL, formatValue, loadChecklist, progress } from '@/lib/checklist'
 import { formatTime, todayKST } from '@/lib/format'
 import { SALES_SELECT, formatWon, paymentDiff, type SalesReport } from '@/lib/sales'
 import { createClient } from '@/lib/supabase/server'
@@ -40,14 +32,10 @@ export default async function ChecklistHistoryPage({
   const back = `/admin/checklists?date=${date}`
   const supabase = await createClient()
 
-  const [{ items, entries, names, photoUrls }, { data: allItemData }, { data: salesData }] = await Promise.all([
+  const [{ items, entries, names, photoUrls }, { data: salesData }] = await Promise.all([
     loadChecklist(supabase, date),
-    isOwner
-      ? supabase.from('checklist_items').select('*').order('phase').order('sort_order')
-      : Promise.resolve({ data: [] }),
     supabase.from('sales_reports').select(SALES_SELECT).eq('work_date', date).order('submitted_at'),
   ])
-  const allItems = (allItemData ?? []) as ChecklistItem[]
   const reports = (salesData ?? []) as unknown as SalesReport[]
   const itemById = new Map(items.map((i) => [i.id, i]))
 
@@ -213,71 +201,9 @@ export default async function ChecklistHistoryPage({
       </section>
 
       {isOwner && (
-        <section className="card">
-          <h2>체크리스트 항목 관리 (사장)</h2>
-          <p>
-            항목은 지우지 않고 &quot;사용 중지&quot;합니다(지난 기록 보존). 이름을 바꾸려면 새 항목을 추가하고 기존
-            항목을 사용 중지하세요.
-          </p>
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>구분</th>
-                  <th>업무</th>
-                  <th>항목</th>
-                  <th>종류</th>
-                  <th>필수</th>
-                  <th>상태</th>
-                </tr>
-              </thead>
-              <tbody>
-                {allItems.map((item) => (
-                  <tr key={item.id} style={item.is_active ? undefined : { color: 'var(--faint)' }}>
-                    <td>{PHASE_LABEL[item.phase]}</td>
-                    <td>{item.category}</td>
-                    <td>{item.title}</td>
-                    <td>
-                      {TYPE_LABEL[item.item_type]}
-                      {item.unit && ` (${item.unit})`}
-                    </td>
-                    <td>{item.is_required ? '필수' : '선택'}</td>
-                    <td>
-                      <form action={setItemActive}>
-                        <input type="hidden" name="item_id" value={item.id} />
-                        <input type="hidden" name="active" value={item.is_active ? '0' : '1'} />
-                        <input type="hidden" name="back" value={back} />
-                        {item.is_active ? '사용 중 ' : '중지 '}
-                        <button type="submit">{item.is_active ? '사용 중지' : '다시 사용'}</button>
-                      </form>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <h3>항목 추가</h3>
-          <form action={addItem}>
-            <input type="hidden" name="back" value={back} />
-            <select name="phase" defaultValue="open">
-              <option value="open">오픈 업무</option>
-              <option value="close">마감 업무</option>
-            </select>{' '}
-            업무 <input name="category" required placeholder="예: 매장 오픈" size={10} /> 항목{' '}
-            <input name="title" required placeholder="예: 정수기 필터 확인" size={14} />{' '}
-            <select name="item_type" defaultValue="check">
-              <option value="check">✔ 체크</option>
-              <option value="number">🔢 숫자 입력</option>
-              <option value="photo">📷 사진 필수</option>
-            </select>{' '}
-            단위(숫자만) <input name="unit" placeholder="℃" size={4} />{' '}
-            <label>
-              <input type="checkbox" name="is_required" defaultChecked /> 필수
-            </label>{' '}
-            <button type="submit">추가</button>
-          </form>
-        </section>
+        <p>
+          <Link href="/admin/checklist-items">⚙️ 체크리스트 항목 설정 (추가 · 수정 · 순서 · 사용 중지)</Link>
+        </p>
       )}
 
       <p style={{ marginTop: 24 }}>

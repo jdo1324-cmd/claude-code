@@ -1,0 +1,52 @@
+'use server'
+
+import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
+import { requireOwner } from '@/lib/auth'
+import { isValidWebhookUrl, testConnection } from '@/lib/google-sheet'
+import { createAdminClient } from '@/lib/supabase/admin'
+
+function back(key: 'ok' | 'error', message: string): never {
+  revalidatePath('/admin/google-sheet')
+  redirect('/admin/google-sheet?' + key + '=' + encodeURIComponent(message))
+}
+
+// Apps Script 웹 앱 주소 저장 → 바로 연결 확인
+export async function saveWebhookUrl(formData: FormData) {
+  const me = await requireOwner()
+  const url = String(formData.get('webhook_url') ?? '').trim()
+  if (!isValidWebhookUrl(url)) {
+    back(
+      'error',
+      '주소가 올바르지 않습니다. https://script.google.com/macros/s/…/exec 형태의 "웹 앱 URL"을 붙여 넣어 주세요.',
+    )
+  }
+  const { error } = await createAdminClient()
+    .from('google_sheet_settings')
+    .update({ webhook_url: url, updated_by: me.id, updated_at: new Date().toISOString() })
+    .eq('id', 1)
+  if (error) back('error', '저장하지 못했습니다: ' + error.message)
+
+  const reply = await testConnection()
+  if (!reply.ok) back('error', '주소는 저장했지만 연결 확인에 실패했습니다: ' + (reply.error ?? '알 수 없는 오류'))
+  back('ok', `연결되었습니다! 시트 "${reply.sheetName}"로 전표를 보낼 수 있습니다.`)
+}
+
+export async function testSheet() {
+  await requireOwner()
+  const reply = await testConnection()
+  if (!reply.ok) back('error', reply.error ?? '연결 확인에 실패했습니다.')
+  back('ok', `연결 정상입니다. (시트 "${reply.sheetName}")`)
+}
+
+// 비밀값이 새어 나간 것 같을 때: 새 값으로 바꾸면 예전 코드로는 받을 수 없음
+export async function regenerateSecret() {
+  const me = await requireOwner()
+  const secret = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '')
+  const { error } = await createAdminClient()
+    .from('google_sheet_settings')
+    .update({ secret, updated_by: me.id, updated_at: new Date().toISOString() })
+    .eq('id', 1)
+  if (error) back('error', '바꾸지 못했습니다: ' + error.message)
+  back('ok', '비밀값을 바꿨습니다. 아래 코드를 다시 복사해서 Apps Script에 붙여 넣고 "새 배포"를 해 주세요.')
+}
