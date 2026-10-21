@@ -1,12 +1,6 @@
 import Link from 'next/link'
 import { ConfirmButton } from '@/app/components/confirm-button'
-import {
-  ATTENDANCE_SELECT,
-  BREAK_OPTIONS,
-  breakLabel,
-  validBreak,
-  type AttendanceRecord,
-} from '@/lib/attendance'
+import { ATTENDANCE_SELECT, BREAK_OPTIONS, breakLabel, validBreak, type AttendanceRecord } from '@/lib/attendance'
 import { getCurrentProfile } from '@/lib/auth'
 import { CORRECTION_SELECT, REQUEST_STATUS_LABEL, REQUEST_TYPE_LABEL, type CorrectionRequest } from '@/lib/corrections'
 import { formatTime, toKstInput, todayKST } from '@/lib/format'
@@ -66,14 +60,14 @@ export default async function CorrectionsPage({
     <main>
       <h1>정정 요청</h1>
       <p>
-        출퇴근 기록은 직접 고칠 수 없습니다. 정정 요청을 보내면 사장님이나 관리자가 확인 후 승인합니다. 승인되면
-        원래 기록은 &quot;무효&quot;로 남고 새 기록이 추가됩니다.
+        출퇴근 기록은 직접 고칠 수 없습니다. 정정 요청을 보내면 사장님이나 관리자가 확인 후 승인합니다. 승인되면 원래
+        기록은 &quot;무효&quot;로 남고 새 기록이 추가됩니다.
       </p>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {ok && <p style={{ color: 'green' }}>{ok}</p>}
+      {error && <p className="alert alert-error">{error}</p>}
+      {ok && <p className="alert alert-ok">{ok}</p>}
 
       {selected ? (
-        <section style={{ border: '1px solid #999', padding: 12 }}>
+        <section className="card">
           <h2>
             {selected.work_date} 기록 정정 (현재: 출근 {formatTime(selected.clock_in)} · 퇴근{' '}
             {formatTime(selected.clock_out)}
@@ -85,8 +79,7 @@ export default async function CorrectionsPage({
             <input type="hidden" name="type" value="modify" />
             <input type="hidden" name="attendance_id" value={selected.id} />
             <p>
-              출근{' '}
-              <input type="datetime-local" name="clock_in" required defaultValue={toKstInput(selected.clock_in)} />{' '}
+              출근 <input type="datetime-local" name="clock_in" required defaultValue={toKstInput(selected.clock_in)} />{' '}
               퇴근 <input type="datetime-local" name="clock_out" defaultValue={toKstInput(selected.clock_out)} />
             </p>
             {isPartTime && (
@@ -146,45 +139,47 @@ export default async function CorrectionsPage({
       )}
 
       <h2>내 요청 내역</h2>
-      <table border={1} cellPadding={6} style={{ borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th>요청일</th>
-            <th>종류</th>
-            <th>요청 내용</th>
-            <th>사유</th>
-            <th>상태</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          {requests.map((q) => (
-            <tr key={q.id}>
-              <td>{q.created_at.slice(0, 10)}</td>
-              <td>{REQUEST_TYPE_LABEL[q.request_type]}</td>
-              <td>{formatProposal(q)}</td>
-              <td>{q.reason}</td>
-              <td>
-                {REQUEST_STATUS_LABEL[q.status]}
-                {q.review_note && ` (${q.review_note})`}
-              </td>
-              <td>
-                {q.status === 'pending' && (
-                  <form action={cancelCorrection}>
-                    <input type="hidden" name="id" value={q.id} />
-                    <ConfirmButton message="이 요청을 취소할까요?">취소</ConfirmButton>
-                  </form>
-                )}
-              </td>
-            </tr>
-          ))}
-          {requests.length === 0 && (
+      <div className="table-wrap">
+        <table>
+          <thead>
             <tr>
-              <td colSpan={6}>요청 내역이 없습니다.</td>
+              <th>요청일</th>
+              <th>종류</th>
+              <th>요청 내용</th>
+              <th>사유</th>
+              <th>상태</th>
+              <th></th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {requests.map((q) => (
+              <tr key={q.id}>
+                <td>{q.created_at.slice(0, 10)}</td>
+                <td>{REQUEST_TYPE_LABEL[q.request_type]}</td>
+                <td>{formatProposal(q)}</td>
+                <td>{q.reason}</td>
+                <td>
+                  {REQUEST_STATUS_LABEL[q.status]}
+                  {q.review_note && ` (${q.review_note})`}
+                </td>
+                <td>
+                  {q.status === 'pending' && (
+                    <form action={cancelCorrection}>
+                      <input type="hidden" name="id" value={q.id} />
+                      <ConfirmButton message="이 요청을 취소할까요?">취소</ConfirmButton>
+                    </form>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {requests.length === 0 && (
+              <tr>
+                <td colSpan={6}>요청 내역이 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </main>
   )
 }

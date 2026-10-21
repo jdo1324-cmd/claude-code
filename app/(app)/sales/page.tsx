@@ -42,7 +42,9 @@ export default async function SalesPage({
   const missing = (missingData ?? []) as { id: number; category: string; title: string }[]
   const report = reportData as unknown as SalesReport | null
   const status = ((statusData ?? []) as { submitted_by: string; submitted_at: string }[])[0] ?? null
-  const names = Object.fromEntries(((nameData ?? []) as { id: string; full_name: string }[]).map((n) => [n.id, n.full_name]))
+  const names = Object.fromEntries(
+    ((nameData ?? []) as { id: string; full_name: string }[]).map((n) => [n.id, n.full_name]),
+  )
   const canRewrite = !!report && (isAdmin(me.role) || report.submitted_by === me.id)
   const blocked = missing.length > 0
 
@@ -51,11 +53,11 @@ export default async function SalesPage({
       {/* 체크리스트가 완료되면 저장 가능 상태로 바로 바뀜 */}
       <RealtimeRefresh table="checklist_entries" filter={`work_date=eq.${date}`} />
       <h1>매출 정산 보고서 ({date})</h1>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {ok && <p style={{ color: 'green' }}>{ok}</p>}
+      {error && <p className="alert alert-error">{error}</p>}
+      {ok && <p className="alert alert-ok">{ok}</p>}
 
       {blocked && (
-        <div style={{ background: '#fee', border: '2px solid crimson', padding: 12, marginBottom: 12 }}>
+        <div className="card card-danger">
           <strong>마감 필수 체크리스트를 먼저 모두 끝내야 보고서를 저장할 수 있습니다.</strong>
           <ul>
             {missing.map((m) => (
@@ -70,7 +72,7 @@ export default async function SalesPage({
 
       {status ? (
         <>
-          <section style={{ border: '1px solid green', padding: 12 }}>
+          <section className="card card-ok">
             <h2>✅ 오늘 보고서 제출 완료</h2>
             <p>
               {names[status.submitted_by] ?? '?'} · {formatTime(status.submitted_at)} 제출
@@ -83,7 +85,7 @@ export default async function SalesPage({
                   {formatWon(report.other_amount)}
                 </li>
                 {paymentDiff(report) !== 0 && (
-                  <li style={{ color: 'crimson', fontWeight: 'bold' }}>
+                  <li style={{ color: 'var(--danger)', fontWeight: 'bold' }}>
                     ⚠️ 결제수단 합계와 매출 차이: {formatWon(paymentDiff(report))}
                   </li>
                 )}

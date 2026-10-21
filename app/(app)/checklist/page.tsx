@@ -18,15 +18,6 @@ import { createClient } from '@/lib/supabase/server'
 import { completeItem, voidEntry } from './actions'
 import { PhotoUpload } from './photo-upload'
 
-const badge = (color: string) => ({
-  display: 'inline-block',
-  fontSize: 12,
-  padding: '0 6px',
-  marginLeft: 4,
-  border: `1px solid ${color}`,
-  color,
-})
-
 export default async function ChecklistPage({
   searchParams,
 }: {
@@ -45,28 +36,40 @@ export default async function ChecklistPage({
     const canVoid = (e: ChecklistEntry) => isAdmin(me.role) || e.done_by === me.id
 
     return (
-      <li id={`item-${item.id}`} style={{ padding: '8px 0', borderBottom: '1px solid #eee' }}>
+      <li id={`item-${item.id}`} className={done ? 'check-item is-done' : 'check-item'}>
+        <span
+          className={done ? 'check-mark done' : item.is_required ? 'check-mark required' : 'check-mark'}
+          aria-label={done ? '완료' : '미완료'}
+        >
+          {done ? '✓' : ''}
+        </span>
         <div>
-          {done ? '✅' : item.is_required ? '⬜' : '◻️'} <strong>{item.title}</strong>
-          <span style={badge(item.is_required ? 'crimson' : '#888')}>{item.is_required ? '필수' : '선택'}</span>
-          <span style={badge('#555')}>{TYPE_LABEL[item.item_type]}</span>
+          <span className="check-title">{item.title}</span>
+          <span className={item.is_required ? 'badge badge-danger' : 'badge'}>
+            {item.is_required ? '필수' : '선택'}
+          </span>
+          <span className="badge">{TYPE_LABEL[item.item_type]}</span>
         </div>
 
         {done ? (
-          <div style={{ marginLeft: 24 }}>
+          <div className="check-body small muted">
             {item.item_type === 'number' && <strong>{formatValue(item, done)} </strong>}
             {done.photo_path && photoUrls[done.photo_path] && (
               <a href={photoUrls[done.photo_path]} target="_blank" rel="noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={photoUrls[done.photo_path]} alt={item.title} style={{ height: 80, verticalAlign: 'middle' }} />
+                <img
+                  src={photoUrls[done.photo_path]}
+                  alt={item.title}
+                  style={{ height: 80, verticalAlign: 'middle', margin: '4px 0' }}
+                />
               </a>
             )}{' '}
             — {names[done.done_by] ?? '?'} · {formatTime(done.done_at)}
             {done.note && ` · 메모: ${done.note}`}
             {canVoid(done) && (
-              <details style={{ display: 'inline-block', marginLeft: 8 }}>
-                <summary>잘못 체크함</summary>
-                <form action={voidEntry}>
+              <details style={{ marginTop: 4 }}>
+                <summary className="small">잘못 체크함</summary>
+                <form action={voidEntry} className="row">
                   <input type="hidden" name="entry_id" value={done.id} />
                   <input type="hidden" name="back" value="/checklist" />
                   <input name="reason" required placeholder="취소 사유" size={14} />{' '}
@@ -76,11 +79,11 @@ export default async function ChecklistPage({
             )}
           </div>
         ) : (
-          <div style={{ marginLeft: 24 }}>
+          <div className="check-body" style={{ marginTop: 6 }}>
             {item.item_type === 'photo' ? (
               <PhotoUpload itemId={item.id} date={date} />
             ) : (
-              <form action={completeItem}>
+              <form action={completeItem} className="row">
                 <input type="hidden" name="item_id" value={item.id} />
                 {item.item_type === 'number' && (
                   <>
@@ -103,7 +106,7 @@ export default async function ChecklistPage({
         )}
 
         {voided.map((v) => (
-          <div key={v.id} style={{ marginLeft: 24, fontSize: 12, color: '#999' }}>
+          <div key={v.id} className="check-body small faint">
             취소됨: {names[v.done_by] ?? '?'} {formatTime(v.done_at)} 체크
             {v.value_number !== null && ` (${formatValue(item, v)})`} → {names[v.voided_by ?? ''] ?? '?'}{' '}
             {formatTime(v.voided_at)} 취소 ({v.void_reason})
@@ -117,38 +120,50 @@ export default async function ChecklistPage({
     <main>
       {/* 다른 직원이 체크하면 바로 반영 */}
       <RealtimeRefresh table="checklist_entries" filter={`work_date=eq.${date}`} />
-      <h1>오픈·마감 체크리스트 ({date})</h1>
-      <p>
-        한 명이 체크하면 모든 직원 화면에 바로 반영됩니다. <span style={badge('crimson')}>필수</span>는 꼭 해야 하는
-        항목, <span style={badge('#888')}>선택</span>은 하면 좋은 항목입니다. 📷 항목은 사진을 찍어야, 🔢 항목은
-        숫자를 입력해야 완료됩니다.
+      <div className="page-head">
+        <h1>오픈·마감 체크리스트</h1>
+        <span className="muted">{date}</span>
+      </div>
+      <p className="small muted">
+        한 명이 체크하면 모든 직원 화면에 바로 반영됩니다.{' '}
+        <span className="badge badge-danger" style={{ marginLeft: 0 }}>
+          필수
+        </span>
+        는 꼭 해야 하는 항목,{' '}
+        <span className="badge" style={{ marginLeft: 0 }}>
+          선택
+        </span>
+        은 하면 좋은 항목입니다. 📷 항목은 사진을 찍어야, 🔢 항목은 숫자를 입력해야 완료됩니다.
       </p>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {ok && <p style={{ color: 'green' }}>{ok}</p>}
+      {error && <p className="alert alert-error">{error}</p>}
+      {ok && <p className="alert alert-ok">{ok}</p>}
 
       {PHASES.map((phase) => {
         const p = progress(items, entries, phase)
         const allRequired = p.requiredDone === p.requiredTotal
         return (
-          <section key={phase} style={{ border: '1px solid #ccc', padding: 12, marginBottom: 16 }}>
-            <h2>
-              {PHASE_LABEL[phase]}{' '}
-              <span style={{ fontSize: 16, color: allRequired ? 'green' : 'crimson' }}>
+          <section key={phase}>
+            <div className="row" style={{ justifyContent: 'space-between' }}>
+              <h2 style={{ margin: 0 }}>{PHASE_LABEL[phase]}</h2>
+              <span className={allRequired ? 'badge badge-ok' : 'badge badge-danger'}>
                 필수 {p.requiredDone}/{p.requiredTotal}
-              </span>{' '}
-              <span style={{ fontSize: 14, color: '#666' }}>
-                (전체 {p.allDone}/{p.allTotal})
               </span>
-            </h2>
+            </div>
+            <div className={p.allDone === p.allTotal ? 'progress complete' : 'progress'}>
+              <span style={{ width: `${p.allTotal ? (p.allDone / p.allTotal) * 100 : 0}%` }} />
+            </div>
+            <div className="small muted">
+              전체 {p.allDone}/{p.allTotal} 완료
+            </div>
             {phase === 'close' && (
-              <p>
+              <p className="alert alert-info small">
                 마감 필수 항목을 모두 끝내야 <Link href="/sales">매출 정산 보고서</Link>를 저장할 수 있습니다.
               </p>
             )}
             {groupByCategory(activeItems.filter((i) => i.phase === phase)).map((g) => (
               <div key={g.category}>
                 <h3 style={{ marginBottom: 0 }}>{g.category}</h3>
-                <ul style={{ listStyle: 'none', paddingLeft: 0, marginTop: 4 }}>
+                <ul className="check-list">
                   {g.items.map((item) => (
                     <ItemRow key={item.id} item={item} />
                   ))}

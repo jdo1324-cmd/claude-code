@@ -54,58 +54,60 @@ export default async function PayPage({
     <main>
       <h1>급여 (세전 잠정, 사장 전용)</h1>
       <PayDisclaimer />
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {ok && <p style={{ color: 'green' }}>{ok}</p>}
+      {error && <p className="alert alert-error">{error}</p>}
+      {ok && <p className="alert alert-ok">{ok}</p>}
 
       <form method="get">
         <input type="month" name="month" defaultValue={month} /> <button type="submit">보기</button>
       </form>
 
       <h2>{month} 세전 잠정 급여</h2>
-      <table border={1} cellPadding={6} style={{ borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th>이름</th>
-            <th>고용 형태</th>
-            <th>현재 급여</th>
-            <th>실근무</th>
-            <th>세전 잠정 금액</th>
-            <th>확인 필요</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ e, current, pay }) => (
-            <tr key={e.id} style={e.is_active ? undefined : { color: '#999' }}>
-              <td>{e.full_name}</td>
-              <td>{EMPLOYMENT_LABEL[e.employment_type]}</td>
-              <td>{current ? `${PAY_TYPE_LABEL[current.pay_type]} ${won(current.amount)}` : '미등록'}</td>
-              <td>{formatMinutes(pay.totalMinutes)}</td>
-              <td style={{ textAlign: 'right' }}>
-                <strong>{won(pay.total)}</strong>
-                {pay.monthlyRate && <div style={{ fontSize: 12 }}>월급 {won(pay.monthlyRate.amount)}</div>}
-                {pay.hourlyDays.length > 0 && (
-                  <div style={{ fontSize: 12 }}>
-                    시급 근무 {pay.hourlyDays.length}일 {won(pay.hourlyTotal)}
-                  </div>
-                )}
-              </td>
-              <td style={{ color: 'crimson', fontSize: 13 }}>
-                {pay.unpricedDays > 0 && `급여 미등록 근무 ${pay.unpricedDays}일(금액 제외)`}
-              </td>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>고용 형태</th>
+              <th>현재 급여</th>
+              <th>실근무</th>
+              <th>세전 잠정 금액</th>
+              <th>확인 필요</th>
             </tr>
-          ))}
-          <tr style={{ fontWeight: 'bold' }}>
-            <td colSpan={4}>합계 (세전 잠정)</td>
-            <td style={{ textAlign: 'right' }}>{won(grandTotal)}</td>
-            <td></td>
-          </tr>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map(({ e, current, pay }) => (
+              <tr key={e.id} style={e.is_active ? undefined : { color: 'var(--faint)' }}>
+                <td>{e.full_name}</td>
+                <td>{EMPLOYMENT_LABEL[e.employment_type]}</td>
+                <td>{current ? `${PAY_TYPE_LABEL[current.pay_type]} ${won(current.amount)}` : '미등록'}</td>
+                <td>{formatMinutes(pay.totalMinutes)}</td>
+                <td className="num">
+                  <strong>{won(pay.total)}</strong>
+                  {pay.monthlyRate && <div className="small muted">월급 {won(pay.monthlyRate.amount)}</div>}
+                  {pay.hourlyDays.length > 0 && (
+                    <div className="small muted">
+                      시급 근무 {pay.hourlyDays.length}일 {won(pay.hourlyTotal)}
+                    </div>
+                  )}
+                </td>
+                <td style={{ color: 'var(--danger)', fontSize: 13 }}>
+                  {pay.unpricedDays > 0 && `급여 미등록 근무 ${pay.unpricedDays}일(금액 제외)`}
+                </td>
+              </tr>
+            ))}
+            <tr style={{ fontWeight: 'bold' }}>
+              <td colSpan={4}>합계 (세전 잠정)</td>
+              <td className="num">{won(grandTotal)}</td>
+              <td></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <h2>시급제 날짜별 누적</h2>
-      <p style={{ fontSize: 13 }}>
-        그날 실근무 시간(휴게 제외) × <strong>그날 적용된 시급</strong>. 나중에 시급이 바뀌어도 지난 날 금액은
-        바뀌지 않습니다.
+      <p className="small muted">
+        그날 실근무 시간(휴게 제외) × <strong>그날 적용된 시급</strong>. 나중에 시급이 바뀌어도 지난 날 금액은 바뀌지
+        않습니다.
       </p>
       {rows
         .filter(({ pay }) => pay.hourlyDays.length > 0)
@@ -114,39 +116,44 @@ export default async function PayPage({
             <summary>
               {e.full_name} — {won(pay.hourlyTotal)} ({pay.hourlyDays.length}일)
             </summary>
-            <table border={1} cellPadding={4} style={{ borderCollapse: 'collapse', margin: '4px 0 12px' }}>
-              <thead>
-                <tr>
-                  <th>날짜</th>
-                  <th>실근무</th>
-                  <th>적용 시급</th>
-                  <th>그날 금액</th>
-                  <th>누적</th>
-                </tr>
-              </thead>
-              <tbody>
-                {pay.hourlyDays.map((d) => (
-                  <tr key={d.date}>
-                    <td>{d.date}</td>
-                    <td>{formatMinutes(d.minutes)}</td>
-                    <td>{won(d.rate.amount)}</td>
-                    <td style={{ textAlign: 'right' }}>{won(d.amount)}</td>
-                    <td style={{ textAlign: 'right' }}>{won(d.cumulative)}</td>
+            <div className="table-wrap">
+              <table style={{ margin: '4px 0 12px' }}>
+                <thead>
+                  <tr>
+                    <th>날짜</th>
+                    <th>실근무</th>
+                    <th>적용 시급</th>
+                    <th>그날 금액</th>
+                    <th>누적</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {pay.hourlyDays.map((d) => (
+                    <tr key={d.date}>
+                      <td>{d.date}</td>
+                      <td>{formatMinutes(d.minutes)}</td>
+                      <td>{won(d.rate.amount)}</td>
+                      <td className="num">{won(d.amount)}</td>
+                      <td className="num">{won(d.cumulative)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </details>
         ))}
       {rows.every(({ pay }) => pay.hourlyDays.length === 0) && <p>이 달 시급제 근무 기록이 없습니다.</p>}
 
-      <h2 style={{ borderTop: '1px solid #ccc', paddingTop: 12 }}>급여 정보 등록 (이력)</h2>
-      <ul style={{ fontSize: 13 }}>
+      <h2>급여 정보 등록 (이력)</h2>
+      <ul className="small muted">
         <li>&quot;몇 월 며칠부터 얼마&quot;로 쌓입니다. 시급이 오르면 새 적용일로 추가하세요.</li>
         <li>지난 근무 금액이 바뀌지 않도록, 처음 등록이 아니면 적용일은 오늘 이후만 가능합니다.</li>
-        <li>무효 처리는 아직 적용 전이거나 오늘 등록한 이력만 가능합니다. 월급제는 그 달 기준일(이번 달은 오늘)에 적용 중인 월급을 그대로 씁니다.</li>
+        <li>
+          무효 처리는 아직 적용 전이거나 오늘 등록한 이력만 가능합니다. 월급제는 그 달 기준일(이번 달은 오늘)에 적용
+          중인 월급을 그대로 씁니다.
+        </li>
       </ul>
-      <form action={addPayRate} style={{ border: '1px solid #999', padding: 8 }}>
+      <form action={addPayRate} className="card">
         <select name="user_id" required defaultValue="">
           <option value="" disabled>
             직원 선택
@@ -169,9 +176,7 @@ export default async function PayPage({
         <ConfirmButton message="이 급여 정보를 등록할까요? (등록 후에는 수정할 수 없고, 적용 전에만 무효 처리할 수 있습니다)">
           등록
         </ConfirmButton>
-        <div style={{ fontSize: 12, color: '#666' }}>
-          참고: 2026년 최저시급 {won(MINIMUM_WAGE_2026)}
-        </div>
+        <div className="small muted">참고: 2026년 최저시급 {won(MINIMUM_WAGE_2026)}</div>
       </form>
 
       {rows.map(({ e, current, upcoming }) => {
@@ -182,51 +187,63 @@ export default async function PayPage({
             <h3 style={{ marginBottom: 4 }}>
               {e.full_name}
               {current?.pay_type === 'hourly' && current.amount < MINIMUM_WAGE_2026 && (
-                <span style={{ color: 'crimson', fontSize: 14 }}> ⚠️ 현재 시급이 2026년 최저시급보다 낮습니다</span>
+                <span style={{ color: 'var(--danger)', fontSize: 14 }}>
+                  {' '}
+                  ⚠️ 현재 시급이 2026년 최저시급보다 낮습니다
+                </span>
               )}
               {upcoming.length > 0 && (
-                <span style={{ fontSize: 14, color: '#555' }}>
+                <span style={{ fontSize: 14, color: 'var(--muted)' }}>
                   {' '}
                   (예정: {upcoming.map((u) => `${u.effective_from}부터 ${won(u.amount)}`).join(', ')})
                 </span>
               )}
             </h3>
-            <table border={1} cellPadding={4} style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th>적용 시작일</th>
-                  <th>종류</th>
-                  <th>금액</th>
-                  <th>메모</th>
-                  <th>상태</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((r) => {
-                  const canVoid =
-                    r.status === 'valid' &&
-                    (r.effective_from >= today || isTodayKst(r.created_at, today))
-                  return (
-                    <tr key={r.id} style={r.status === 'void' ? { color: '#999', textDecoration: 'line-through' } : undefined}>
-                      <td>{r.effective_from}</td>
-                      <td>{PAY_TYPE_LABEL[r.pay_type]}</td>
-                      <td style={{ textAlign: 'right' }}>{won(r.amount)}</td>
-                      <td>{r.note}</td>
-                      <td style={{ textDecoration: 'none' }}>
-                        {r.status === 'void' ? `무효 (${r.void_reason})` : r.id === current?.id ? '적용 중' : r.effective_from > today ? '예정' : '지난 이력'}
-                        {canVoid && (
-                          <form action={voidPayRate} style={{ display: 'inline', marginLeft: 6 }}>
-                            <input type="hidden" name="id" value={r.id} />
-                            <input name="reason" required placeholder="사유" size={8} />{' '}
-                            <ConfirmButton message="이 급여 이력을 무효 처리할까요? (이력에는 남습니다)">무효</ConfirmButton>
-                          </form>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>적용 시작일</th>
+                    <th>종류</th>
+                    <th>금액</th>
+                    <th>메모</th>
+                    <th>상태</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history.map((r) => {
+                    const canVoid =
+                      r.status === 'valid' && (r.effective_from >= today || isTodayKst(r.created_at, today))
+                    return (
+                      <tr key={r.id} className={r.status === 'void' ? 'void-row' : undefined}>
+                        <td>{r.effective_from}</td>
+                        <td>{PAY_TYPE_LABEL[r.pay_type]}</td>
+                        <td className="num">{won(r.amount)}</td>
+                        <td>{r.note}</td>
+                        <td className="keep">
+                          {r.status === 'void'
+                            ? `무효 (${r.void_reason})`
+                            : r.id === current?.id
+                              ? '적용 중'
+                              : r.effective_from > today
+                                ? '예정'
+                                : '지난 이력'}
+                          {canVoid && (
+                            <form action={voidPayRate} style={{ display: 'inline', marginLeft: 6 }}>
+                              <input type="hidden" name="id" value={r.id} />
+                              <input name="reason" required placeholder="사유" size={8} />{' '}
+                              <ConfirmButton message="이 급여 이력을 무효 처리할까요? (이력에는 남습니다)">
+                                무효
+                              </ConfirmButton>
+                            </form>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
           </section>
         )
       })}

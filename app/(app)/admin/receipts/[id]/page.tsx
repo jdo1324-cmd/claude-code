@@ -35,7 +35,9 @@ export default async function ReceiptDetailPage({
     supabase.from('profiles').select('id, full_name'),
     supabase.from('receipt_price_history').select('*').eq('receipt_id', id).order('id'),
   ])
-  const names = Object.fromEntries(((profileData ?? []) as Pick<Profile, 'id' | 'full_name'>[]).map((p) => [p.id, p.full_name]))
+  const names = Object.fromEntries(
+    ((profileData ?? []) as Pick<Profile, 'id' | 'full_name'>[]).map((p) => [p.id, p.full_name]),
+  )
   const prices = (priceData ?? []) as PriceRow[]
   const open = ['proposed', 'failed'].includes(receipt.status)
 
@@ -52,8 +54,8 @@ export default async function ReceiptDetailPage({
         {names[receipt.created_by] ?? '?'} · {receipt.created_at.slice(0, 10)} {formatTime(receipt.created_at)} 올림
         {receipt.note && ` · 메모: ${receipt.note}`}
       </p>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {ok && <p style={{ color: 'green' }}>{ok}</p>}
+      {error && <p className="alert alert-error">{error}</p>}
+      {ok && <p className="alert alert-ok">{ok}</p>}
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         {/* 왼쪽: 사진 (눌러서 크게 보기) */}
@@ -63,7 +65,11 @@ export default async function ReceiptDetailPage({
             u.signedUrl ? (
               <a key={i} href={u.signedUrl} target="_blank" rel="noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={u.signedUrl} alt={`전표 ${i + 1}장`} style={{ width: '100%', maxWidth: 520, border: '1px solid #ccc', marginBottom: 8 }} />
+                <img
+                  src={u.signedUrl}
+                  alt={`전표 ${i + 1}장`}
+                  style={{ width: '100%', maxWidth: 520, border: '1px solid var(--border)', marginBottom: 8 }}
+                />
               </a>
             ) : null,
           )}
@@ -76,12 +82,12 @@ export default async function ReceiptDetailPage({
           {open && (
             <>
               <h2>AI 제안 확인 후 확정</h2>
-              <p style={{ background: '#eef', padding: 8 }}>
-                아래 값은 AI가 읽은 <strong>제안</strong>입니다. 왼쪽 사진과 하나씩 대조하고, 틀린 곳을 고친 뒤 확정하세요.
-                확정 전에는 실제 기록에 반영되지 않습니다.
+              <p className="alert alert-info">
+                아래 값은 AI가 읽은 <strong>제안</strong>입니다. 왼쪽 사진과 하나씩 대조하고, 틀린 곳을 고친 뒤
+                확정하세요. 확정 전에는 실제 기록에 반영되지 않습니다.
               </p>
-              {receipt.ai_error && <p style={{ color: 'crimson' }}>AI: {receipt.ai_error}</p>}
-              {receipt.proposal?.notes && <p style={{ color: '#a60' }}>AI 메모: {receipt.proposal.notes}</p>}
+              {receipt.ai_error && <p className="alert alert-error">AI: {receipt.ai_error}</p>}
+              {receipt.proposal?.notes && <p style={{ color: 'var(--warn)' }}>AI 메모: {receipt.proposal.notes}</p>}
               <ConfirmForm id={id} proposal={receipt.proposal} />
               <div style={{ display: 'flex', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>
                 <form action={retryReceipt}>
@@ -102,45 +108,56 @@ export default async function ReceiptDetailPage({
             <>
               <h2>확정된 기록</h2>
               {receipt.status === 'void' && (
-                <p style={{ color: 'crimson' }}>
+                <p className="alert alert-error">
                   무효: {receipt.close_reason} ({names[receipt.closed_by ?? ''] ?? '?'}) — 단가 비교에서 빠집니다.
                 </p>
               )}
               <p>
-                {receipt.vendor} · {receipt.receipt_date} · 합계 {won(receipt.total_amount)} — {names[receipt.confirmed_by ?? ''] ?? '?'}{' '}
-                확정
+                {receipt.vendor} · {receipt.receipt_date} · 합계 {won(receipt.total_amount)} —{' '}
+                {names[receipt.confirmed_by ?? ''] ?? '?'} 확정
               </p>
               {receipt.status === 'confirmed' && (
-                <table border={1} cellPadding={4} style={{ borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      <th>품목</th>
-                      <th>수량</th>
-                      <th>단가</th>
-                      <th>금액</th>
-                      <th>지난번 대비 단가</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {prices.map((p) => {
-                      const change = priceChange(p)
-                      return (
-                        <tr key={p.id}>
-                          <td>{p.item_name}</td>
-                          <td>
-                            {Number(p.quantity)}
-                            {p.unit}
-                          </td>
-                          <td style={{ textAlign: 'right' }}>{won(p.unit_price)}</td>
-                          <td style={{ textAlign: 'right' }}>{won(p.line_total)}</td>
-                          <td style={{ color: change?.direction === 'up' ? 'crimson' : change?.direction === 'down' ? 'blue' : '#888' }}>
-                            {change ? `${change.text} (지난번 ${p.prev_receipt_date} ${p.prev_vendor})` : '첫 기록'}
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
+                <div className="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>품목</th>
+                        <th>수량</th>
+                        <th>단가</th>
+                        <th>금액</th>
+                        <th>지난번 대비 단가</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {prices.map((p) => {
+                        const change = priceChange(p)
+                        return (
+                          <tr key={p.id}>
+                            <td>{p.item_name}</td>
+                            <td>
+                              {Number(p.quantity)}
+                              {p.unit}
+                            </td>
+                            <td className="num">{won(p.unit_price)}</td>
+                            <td className="num">{won(p.line_total)}</td>
+                            <td
+                              style={{
+                                color:
+                                  change?.direction === 'up'
+                                    ? 'var(--danger)'
+                                    : change?.direction === 'down'
+                                      ? 'var(--info)'
+                                      : 'var(--faint)',
+                              }}
+                            >
+                              {change ? `${change.text} (지난번 ${p.prev_receipt_date} ${p.prev_vendor})` : '첫 기록'}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
               {receipt.status === 'confirmed' && (
                 <form action={closeReceipt} style={{ marginTop: 12 }}>
@@ -156,7 +173,7 @@ export default async function ReceiptDetailPage({
           )}
 
           {receipt.status === 'rejected' && (
-            <p style={{ color: 'crimson' }}>
+            <p className="alert alert-error">
               반려: {receipt.close_reason} ({names[receipt.closed_by ?? ''] ?? '?'})
             </p>
           )}

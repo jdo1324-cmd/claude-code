@@ -24,9 +24,9 @@ export async function updateSession(request: NextRequest) {
     },
   )
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  // getClaims: 로그인 토큰을 서버에서 바로 검증 (만료됐으면 갱신). Supabase에 매번 묻지 않아 빠름
+  const { data } = await supabase.auth.getClaims()
+  const user = data?.claims ?? null
 
   const path = request.nextUrl.pathname
   const isPublic = PUBLIC_PATHS.some((p) => path === p || path.startsWith(p + '/'))

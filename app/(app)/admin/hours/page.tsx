@@ -59,7 +59,13 @@ export default async function HoursPage({ searchParams }: { searchParams: Promis
   const records = (recordData ?? []) as unknown as AttendanceRecord[]
 
   const rows = employees
-    .map((e) => ({ e, s: summarize(records.filter((r) => r.user_id === e.id), e.employment_type === 'part_time') }))
+    .map((e) => ({
+      e,
+      s: summarize(
+        records.filter((r) => r.user_id === e.id),
+        e.employment_type === 'part_time',
+      ),
+    }))
     .filter(({ e, s }) => e.is_active || s.days > 0 || s.working > 0)
   const total = rows.reduce((sum, { s }) => sum + s.netMinutes, 0)
 
@@ -72,62 +78,64 @@ export default async function HoursPage({ searchParams }: { searchParams: Promis
       <form method="get">
         <input type="month" name="month" defaultValue={month} /> <button type="submit">보기</button>
       </form>
-      {error && <p style={{ color: 'crimson' }}>기록을 불러오지 못했습니다: {error.message}</p>}
+      {error && <p className="alert alert-error">기록을 불러오지 못했습니다: {error.message}</p>}
       <p>
         {month} ({start} ~ {end}) · 유효한 기록만 합산 · 실근무 = 퇴근 − 출근 − 휴게시간(아르바이트)
       </p>
 
-      <table border={1} cellPadding={6} style={{ borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th>이름</th>
-            <th>권한</th>
-            <th>고용 형태</th>
-            <th>근무일수</th>
-            <th>총 실근무</th>
-            <th>(시간)</th>
-            <th>휴게 합계</th>
-            <th>확인 필요</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(({ e, s }) => {
-            const warnings = [
-              s.autoClockOuts > 0 && `자동 퇴근 ${s.autoClockOuts}건`,
-              s.missingBreaks > 0 && `휴게 미입력 ${s.missingBreaks}건`,
-              s.working > 0 && `근무 중 ${s.working}건(합계 제외)`,
-            ].filter(Boolean)
-            return (
-              <tr key={e.id} style={e.is_active ? undefined : { color: '#999' }}>
-                <td>
-                  {e.full_name}
-                  {!e.is_active && ' (중지)'}
-                </td>
-                <td>{ROLE_LABEL[e.role]}</td>
-                <td>{EMPLOYMENT_LABEL[e.employment_type]}</td>
-                <td>{s.days}일</td>
-                <td>
-                  <strong>{formatMinutes(s.netMinutes)}</strong>
-                </td>
-                <td>{(s.netMinutes / 60).toFixed(1)}h</td>
-                <td>{e.employment_type === 'part_time' ? formatMinutes(s.breakMinutes) : '-'}</td>
-                <td style={{ color: warnings.length ? 'crimson' : undefined }}>{warnings.join(', ') || '-'}</td>
-              </tr>
-            )
-          })}
-          <tr>
-            <td colSpan={4}>
-              <strong>합계</strong>
-            </td>
-            <td>
-              <strong>{formatMinutes(total)}</strong>
-            </td>
-            <td>{(total / 60).toFixed(1)}h</td>
-            <td colSpan={2}></td>
-          </tr>
-        </tbody>
-      </table>
-      <p style={{ fontSize: 13 }}>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>이름</th>
+              <th>권한</th>
+              <th>고용 형태</th>
+              <th>근무일수</th>
+              <th>총 실근무</th>
+              <th>(시간)</th>
+              <th>휴게 합계</th>
+              <th>확인 필요</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ e, s }) => {
+              const warnings = [
+                s.autoClockOuts > 0 && `자동 퇴근 ${s.autoClockOuts}건`,
+                s.missingBreaks > 0 && `휴게 미입력 ${s.missingBreaks}건`,
+                s.working > 0 && `근무 중 ${s.working}건(합계 제외)`,
+              ].filter(Boolean)
+              return (
+                <tr key={e.id} style={e.is_active ? undefined : { color: 'var(--faint)' }}>
+                  <td>
+                    {e.full_name}
+                    {!e.is_active && ' (중지)'}
+                  </td>
+                  <td>{ROLE_LABEL[e.role]}</td>
+                  <td>{EMPLOYMENT_LABEL[e.employment_type]}</td>
+                  <td>{s.days}일</td>
+                  <td>
+                    <strong>{formatMinutes(s.netMinutes)}</strong>
+                  </td>
+                  <td>{(s.netMinutes / 60).toFixed(1)}h</td>
+                  <td>{e.employment_type === 'part_time' ? formatMinutes(s.breakMinutes) : '-'}</td>
+                  <td style={{ color: warnings.length ? 'var(--danger)' : undefined }}>{warnings.join(', ') || '-'}</td>
+                </tr>
+              )
+            })}
+            <tr>
+              <td colSpan={4}>
+                <strong>합계</strong>
+              </td>
+              <td>
+                <strong>{formatMinutes(total)}</strong>
+              </td>
+              <td>{(total / 60).toFixed(1)}h</td>
+              <td colSpan={2}></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="small muted">
         &quot;자동 퇴근&quot;은 실제 퇴근 시간과 다를 수 있으니 관리 화면에서 확인 후 정정하세요. 정규직은 휴게시간을
         따로 입력하지 않아 퇴근 − 출근 시간 그대로 합산됩니다.
       </p>

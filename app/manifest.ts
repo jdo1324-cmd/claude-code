@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     short_name: '매장관리',
     start_url: '/',
     display: 'standalone',
-    background_color: '#ffffff',
-    theme_color: '#2a6f4f',
+    background_color: '#f6f4f0',
+    theme_color: '#1f6b52',
     icons: [{ src: '/icon', sizes: '512x512', type: 'image/png' }],
   }
 }

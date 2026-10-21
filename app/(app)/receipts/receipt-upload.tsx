@@ -37,7 +37,8 @@ export function ReceiptUpload({ date }: { date: string }) {
       for (const p of photos) {
         const blob = await shrinkImage(p.file, 2000) // 글씨를 읽어야 하므로 조금 크게
         const ext = IMAGE_EXT[blob.type]
-        if (!ext || ext === 'heic' || ext === 'heif') throw new Error('JPG/PNG 사진만 올릴 수 있습니다. 카메라로 다시 찍어 주세요.')
+        if (!ext || ext === 'heic' || ext === 'heif')
+          throw new Error('JPG/PNG 사진만 올릴 수 있습니다. 카메라로 다시 찍어 주세요.')
         const path = `${date}/${crypto.randomUUID()}.${ext}`
         const { error: uploadError } = await supabase.storage
           .from('receipt-photos')
@@ -61,15 +62,15 @@ export function ReceiptUpload({ date }: { date: string }) {
   return (
     <div>
       {done && (
-        <p style={{ color: 'green', fontWeight: 'bold' }}>
+        <p className="alert alert-ok">
           ✅ 전표를 올렸습니다. 사장님·관리자가 확인합니다. 다른 전표가 있으면 이어서 올려 주세요.
         </p>
       )}
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {error && <p className="alert alert-error">{error}</p>}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '8px 0' }}>
         {photos.map((p, i) => (
-          <div key={p.url} style={{ border: '1px solid #ccc', padding: 4, textAlign: 'center' }}>
+          <div key={p.url} style={{ border: '1px solid var(--border)', padding: 4, textAlign: 'center' }}>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={p.url} alt={`전표 ${i + 1}`} style={{ height: 120 }} />
             <div>
@@ -83,21 +84,36 @@ export function ReceiptUpload({ date }: { date: string }) {
       </div>
 
       {photos.length < MAX_PHOTOS && (
-        <label style={{ display: 'inline-block', border: '1px solid #333', padding: '8px 16px', cursor: 'pointer' }}>
+        <label className="file-button">
           📷 {photos.length === 0 ? '전표 사진 찍기' : `다음 장 찍기 (${photos.length}/${MAX_PHOTOS})`}
-          <input type="file" accept="image/*" capture="environment" onChange={addPhoto} disabled={busy} style={{ display: 'none' }} />
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={addPhoto}
+            disabled={busy}
+            style={{ display: 'none' }}
+          />
         </label>
       )}
-      <p style={{ fontSize: 13 }}>전표가 여러 장이면 최대 {MAX_PHOTOS}장까지 이어서 찍을 수 있습니다. 글씨가 잘 보이게 찍어 주세요.</p>
+      <p className="small muted">
+        전표가 여러 장이면 최대 {MAX_PHOTOS}장까지 이어서 찍을 수 있습니다. 글씨가 잘 보이게 찍어 주세요.
+      </p>
 
       <p>
         <label>
           메모 (선택)
           <br />
-          <input value={note} onChange={(e) => setNote(e.target.value)} size={30} placeholder="예: 가나청과 아침 배송" disabled={busy} />
+          <input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            size={30}
+            placeholder="예: 가나청과 아침 배송"
+            disabled={busy}
+          />
         </label>
       </p>
-      <button type="button" onClick={submit} disabled={busy || photos.length === 0} style={{ fontSize: 18, padding: '8px 24px' }}>
+      <button type="button" onClick={submit} disabled={busy || photos.length === 0} className="btn-lg">
         {busy ? '올리는 중…' : `전표 올리기 (${photos.length}장)`}
       </button>
     </div>

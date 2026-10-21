@@ -8,26 +8,30 @@ export const BREAK_NOTICE =
 // 아르바이트 직원의 휴게시간 입력 칸
 export function BreakForm({ attendanceId, back }: { attendanceId: number; back: string }) {
   return (
-    <form action={submitBreak} style={{ border: '2px solid #c60', padding: 12, margin: '12px 0' }}>
+    <form action={submitBreak} className="card card-warn">
       <input type="hidden" name="attendance_id" value={attendanceId} />
       <input type="hidden" name="back" value={back} />
-      <p>
-        <strong>오늘 휴게시간을 입력하세요.</strong> (0.5시간 단위)
+      <p style={{ marginTop: 0 }}>
+        <strong>오늘 휴게시간을 입력하세요.</strong> <span className="muted">(0.5시간 단위)</span>
       </p>
-      <select name="minutes" required defaultValue="">
-        <option value="" disabled>
-          선택
-        </option>
-        {BREAK_OPTIONS.map((m) => (
-          <option key={m} value={m}>
-            {breakLabel(m)}
+      <div className="row">
+        <select name="minutes" required defaultValue="">
+          <option value="" disabled>
+            선택
           </option>
-        ))}
-      </select>{' '}
-      <ConfirmButton message={`휴게시간을 {value}(으)로 저장합니다.\n\n${BREAK_NOTICE}\n\n저장할까요?`}>
-        저장
-      </ConfirmButton>
-      <p style={{ color: '#c60', fontSize: 14 }}>⚠️ {BREAK_NOTICE}</p>
+          {BREAK_OPTIONS.map((m) => (
+            <option key={m} value={m}>
+              {breakLabel(m)}
+            </option>
+          ))}
+        </select>{' '}
+        <ConfirmButton message={`휴게시간을 {value}(으)로 저장합니다.\n\n${BREAK_NOTICE}\n\n저장할까요?`}>
+          저장
+        </ConfirmButton>
+      </div>
+      <p className="small text-warn" style={{ marginBottom: 0 }}>
+        ⚠️ {BREAK_NOTICE}
+      </p>
     </form>
   )
 }

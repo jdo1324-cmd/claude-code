@@ -36,7 +36,9 @@ export default async function ReceiptListPage() {
   const pending = (pendingData ?? []) as unknown as Receipt[]
   const done = (doneData ?? []) as unknown as Receipt[]
   const changes = ((priceData ?? []) as PriceRow[]).filter((p) => Number(p.prev_unit_price) !== Number(p.unit_price))
-  const names = Object.fromEntries(((profileData ?? []) as Pick<Profile, 'id' | 'full_name'>[]).map((p) => [p.id, p.full_name]))
+  const names = Object.fromEntries(
+    ((profileData ?? []) as Pick<Profile, 'id' | 'full_name'>[]).map((p) => [p.id, p.full_name]),
+  )
 
   const row = (r: Receipt) => (
     <tr key={r.id}>
@@ -48,8 +50,8 @@ export default async function ReceiptListPage() {
       <td>{r.photo_paths.length}장</td>
       <td>{RECEIPT_STATUS_LABEL[r.status]}</td>
       <td>{r.vendor ?? r.proposal?.vendor ?? '-'}</td>
-      <td style={{ textAlign: 'right' }}>{won(r.total_amount ?? r.proposal?.total_amount)}</td>
-      <td style={{ fontSize: 12 }}>{r.close_reason ?? r.ai_error ?? r.note ?? ''}</td>
+      <td className="num">{won(r.total_amount ?? r.proposal?.total_amount)}</td>
+      <td className="small">{r.close_reason ?? r.ai_error ?? r.note ?? ''}</td>
     </tr>
   )
   const head = (
@@ -69,75 +71,85 @@ export default async function ReceiptListPage() {
     <main>
       <RealtimeRefresh table="receipts" />
       <h1>거래처 전표</h1>
-      <p style={{ fontSize: 13 }}>
+      <p className="small muted">
         AI가 읽은 값은 제안일 뿐입니다. 사진과 대조해 <strong>확정</strong>해야 실제 기록과 단가 비교에 반영됩니다.
         전표는 사장님·관리자만 볼 수 있습니다.
       </p>
 
       <h2>확인 대기 ({pending.length}건)</h2>
-      <table border={1} cellPadding={6} style={{ borderCollapse: 'collapse' }}>
-        <thead>{head}</thead>
-        <tbody>
-          {pending.map(row)}
-          {pending.length === 0 && (
-            <tr>
-              <td colSpan={8}>확인할 전표가 없습니다.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+      <div className="table-wrap">
+        <table>
+          <thead>{head}</thead>
+          <tbody>
+            {pending.map(row)}
+            {pending.length === 0 && (
+              <tr>
+                <td colSpan={8}>확인할 전표가 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <h2>단가 변동 (최근 60일 확정분)</h2>
-      <table border={1} cellPadding={6} style={{ borderCollapse: 'collapse' }}>
-        <thead>
-          <tr>
-            <th>전표 날짜</th>
-            <th>품목</th>
-            <th>단위</th>
-            <th>변동</th>
-            <th>지난번</th>
-            <th>이번</th>
-          </tr>
-        </thead>
-        <tbody>
-          {changes.map((p) => {
-            const change = priceChange(p)!
-            return (
-              <tr key={p.id}>
-                <td>
-                  <Link href={`/admin/receipts/${p.receipt_id}`}>{p.receipt_date}</Link>
-                </td>
-                <td>{p.item_name}</td>
-                <td>{p.unit ?? '-'}</td>
-                <td style={{ color: change.direction === 'up' ? 'crimson' : 'blue', fontWeight: 'bold' }}>{change.text}</td>
-                <td>
-                  {p.prev_receipt_date} {p.prev_vendor}
-                </td>
-                <td>{p.vendor}</td>
-              </tr>
-            )
-          })}
-          {changes.length === 0 && (
+      <div className="table-wrap">
+        <table>
+          <thead>
             <tr>
-              <td colSpan={6}>단가가 바뀐 품목이 없습니다. (같은 품목이 두 번 이상 확정되어야 비교됩니다)</td>
+              <th>전표 날짜</th>
+              <th>품목</th>
+              <th>단위</th>
+              <th>변동</th>
+              <th>지난번</th>
+              <th>이번</th>
             </tr>
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {changes.map((p) => {
+              const change = priceChange(p)!
+              return (
+                <tr key={p.id}>
+                  <td>
+                    <Link href={`/admin/receipts/${p.receipt_id}`}>{p.receipt_date}</Link>
+                  </td>
+                  <td>{p.item_name}</td>
+                  <td>{p.unit ?? '-'}</td>
+                  <td
+                    style={{ color: change.direction === 'up' ? 'var(--danger)' : 'var(--info)', fontWeight: 'bold' }}
+                  >
+                    {change.text}
+                  </td>
+                  <td>
+                    {p.prev_receipt_date} {p.prev_vendor}
+                  </td>
+                  <td>{p.vendor}</td>
+                </tr>
+              )
+            })}
+            {changes.length === 0 && (
+              <tr>
+                <td colSpan={6}>단가가 바뀐 품목이 없습니다. (같은 품목이 두 번 이상 확정되어야 비교됩니다)</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
 
       <h2>최근 처리된 전표</h2>
-      <table border={1} cellPadding={6} style={{ borderCollapse: 'collapse' }}>
-        <thead>{head}</thead>
-        <tbody>
-          {done.map(row)}
-          {done.length === 0 && (
-            <tr>
-              <td colSpan={8}>아직 없습니다.</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-      <p style={{ fontSize: 12, color: '#888' }}>오늘: {todayKST()}</p>
+      <div className="table-wrap">
+        <table>
+          <thead>{head}</thead>
+          <tbody>
+            {done.map(row)}
+            {done.length === 0 && (
+              <tr>
+                <td colSpan={8}>아직 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <p className="small faint">오늘: {todayKST()}</p>
     </main>
   )
 }

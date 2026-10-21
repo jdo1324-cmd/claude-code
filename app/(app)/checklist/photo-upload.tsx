@@ -42,7 +42,7 @@ export function PhotoUpload({ itemId, date }: { itemId: number; date: string }) 
 
   return (
     <div>
-      <label style={{ display: 'inline-block', border: '1px solid #333', padding: '6px 12px', cursor: 'pointer' }}>
+      <label className="file-button">
         {busy ? '올리는 중…' : '📷 사진 찍기'}
         <input
           type="file"
@@ -53,7 +53,7 @@ export function PhotoUpload({ itemId, date }: { itemId: number; date: string }) 
           style={{ display: 'none' }}
         />
       </label>
-      {error && <div style={{ color: 'crimson' }}>{error}</div>}
+      {error && <div style={{ color: 'var(--danger)' }}>{error}</div>}
     </div>
   )
 }

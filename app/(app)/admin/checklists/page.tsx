@@ -66,8 +66,8 @@ export default async function ChecklistHistoryPage({
       <form method="get">
         <input type="date" name="date" defaultValue={date} /> <button type="submit">보기</button>
       </form>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {ok && <p style={{ color: 'green' }}>{ok}</p>}
+      {error && <p className="alert alert-error">{error}</p>}
+      {ok && <p className="alert alert-ok">{ok}</p>}
 
       {PHASES.map((phase) => {
         const p = progress(items, entries, phase)
@@ -75,84 +75,96 @@ export default async function ChecklistHistoryPage({
           <section key={phase} style={{ marginTop: 16 }}>
             <h2>
               {PHASE_LABEL[phase]}{' '}
-              <span style={{ fontSize: 16, color: p.requiredDone === p.requiredTotal ? 'green' : 'crimson' }}>
+              <span
+                style={{ fontSize: 16, color: p.requiredDone === p.requiredTotal ? 'var(--success)' : 'var(--danger)' }}
+              >
                 필수 {p.requiredDone}/{p.requiredTotal}
               </span>{' '}
-              <span style={{ fontSize: 14, color: '#666' }}>(전체 {p.allDone}/{p.allTotal})</span>
+              <span className="small muted">
+                (전체 {p.allDone}/{p.allTotal})
+              </span>
             </h2>
-            <table border={1} cellPadding={6} style={{ borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  <th>업무</th>
-                  <th>항목</th>
-                  <th>구분</th>
-                  <th>결과</th>
-                  <th>한 사람</th>
-                  <th>시각</th>
-                  <th>취소 내역</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items
-                  .filter((i) => i.phase === phase)
-                  .map((item) => {
-                    const done = entries.find((e) => e.item_id === item.id && e.status === 'valid')
-                    const voided = entries.filter((e) => e.item_id === item.id && e.status === 'void')
-                    return (
-                      <tr
-                        key={item.id}
-                        style={!done && item.is_required && item.is_active ? { background: '#fee' } : undefined}
-                      >
-                        <td>{item.category}</td>
-                        <td>
-                          {item.title}
-                          {!item.is_active && ' (사용 중지됨)'}
-                        </td>
-                        <td>
-                          {item.is_required ? '필수' : '선택'} · {TYPE_LABEL[item.item_type]}
-                        </td>
-                        <td>
-                          {!done ? (
-                            <strong style={{ color: item.is_required ? 'crimson' : '#888' }}>미완료</strong>
-                          ) : item.item_type === 'number' ? (
-                            formatValue(item, done)
-                          ) : item.item_type === 'photo' && done.photo_path && photoUrls[done.photo_path] ? (
-                            <a href={photoUrls[done.photo_path]} target="_blank" rel="noreferrer">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={photoUrls[done.photo_path]} alt={item.title} style={{ height: 60 }} />
-                            </a>
-                          ) : (
-                            '완료'
-                          )}
-                          {done?.note && <div style={{ fontSize: 12 }}>메모: {done.note}</div>}
-                          {done && (
-                            <details>
-                              <summary style={{ fontSize: 12 }}>취소</summary>
-                              <form action={voidEntry}>
-                                <input type="hidden" name="entry_id" value={done.id} />
-                                <input type="hidden" name="back" value={back} />
-                                <input name="reason" required placeholder="사유" size={10} />{' '}
-                                <ConfirmButton message="이 체크를 취소할까요? (기록에는 남습니다)">취소</ConfirmButton>
-                              </form>
-                            </details>
-                          )}
-                        </td>
-                        <td>{done ? names[done.done_by] ?? '?' : '-'}</td>
-                        <td>{done ? formatDateTime(done.done_at) : '-'}</td>
-                        <td style={{ fontSize: 12, color: '#777' }}>
-                          {voided.map((v) => (
-                            <div key={v.id}>
-                              {names[v.done_by] ?? '?'} {formatTime(v.done_at)} 체크
-                              {v.value_number !== null && `(${formatValue(item, v)})`} → {names[v.voided_by ?? ''] ?? '?'}{' '}
-                              {formatTime(v.voided_at)} 취소: {v.void_reason}
-                            </div>
-                          ))}
-                        </td>
-                      </tr>
-                    )
-                  })}
-              </tbody>
-            </table>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>업무</th>
+                    <th>항목</th>
+                    <th>구분</th>
+                    <th>결과</th>
+                    <th>한 사람</th>
+                    <th>시각</th>
+                    <th>취소 내역</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items
+                    .filter((i) => i.phase === phase)
+                    .map((item) => {
+                      const done = entries.find((e) => e.item_id === item.id && e.status === 'valid')
+                      const voided = entries.filter((e) => e.item_id === item.id && e.status === 'void')
+                      return (
+                        <tr
+                          key={item.id}
+                          style={
+                            !done && item.is_required && item.is_active ? { background: 'var(--danger-bg)' } : undefined
+                          }
+                        >
+                          <td>{item.category}</td>
+                          <td>
+                            {item.title}
+                            {!item.is_active && ' (사용 중지됨)'}
+                          </td>
+                          <td>
+                            {item.is_required ? '필수' : '선택'} · {TYPE_LABEL[item.item_type]}
+                          </td>
+                          <td>
+                            {!done ? (
+                              <strong style={{ color: item.is_required ? 'var(--danger)' : 'var(--faint)' }}>
+                                미완료
+                              </strong>
+                            ) : item.item_type === 'number' ? (
+                              formatValue(item, done)
+                            ) : item.item_type === 'photo' && done.photo_path && photoUrls[done.photo_path] ? (
+                              <a href={photoUrls[done.photo_path]} target="_blank" rel="noreferrer">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img src={photoUrls[done.photo_path]} alt={item.title} style={{ height: 60 }} />
+                              </a>
+                            ) : (
+                              '완료'
+                            )}
+                            {done?.note && <div className="small muted">메모: {done.note}</div>}
+                            {done && (
+                              <details>
+                                <summary style={{ fontSize: 12 }}>취소</summary>
+                                <form action={voidEntry}>
+                                  <input type="hidden" name="entry_id" value={done.id} />
+                                  <input type="hidden" name="back" value={back} />
+                                  <input name="reason" required placeholder="사유" size={10} />{' '}
+                                  <ConfirmButton message="이 체크를 취소할까요? (기록에는 남습니다)">
+                                    취소
+                                  </ConfirmButton>
+                                </form>
+                              </details>
+                            )}
+                          </td>
+                          <td>{done ? (names[done.done_by] ?? '?') : '-'}</td>
+                          <td>{done ? formatDateTime(done.done_at) : '-'}</td>
+                          <td style={{ fontSize: 12, color: 'var(--muted)' }}>
+                            {voided.map((v) => (
+                              <div key={v.id}>
+                                {names[v.done_by] ?? '?'} {formatTime(v.done_at)} 체크
+                                {v.value_number !== null && `(${formatValue(item, v)})`} →{' '}
+                                {names[v.voided_by ?? ''] ?? '?'} {formatTime(v.voided_at)} 취소: {v.void_reason}
+                              </div>
+                            ))}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
+            </div>
           </section>
         )
       })}
@@ -165,12 +177,13 @@ export default async function ChecklistHistoryPage({
           return (
             <div
               key={s.id}
-              style={{ border: '1px solid #ccc', padding: 8, marginBottom: 8, color: s.status === 'void' ? '#999' : undefined }}
+              className="card"
+              style={{ padding: 12, margin: '0 0 8px', color: s.status === 'void' ? 'var(--faint)' : undefined }}
             >
               {s.status === 'void' && <strong>[무효: {s.void_reason}] </strong>}
-              매출 {formatWon(s.total_sales)} · 카드 {formatWon(s.card_amount)} · 현금 {formatWon(s.cash_amount)} ·
-              기타 {formatWon(s.other_amount)}
-              {diff !== 0 && <strong style={{ color: 'crimson' }}> · 차이 {formatWon(diff)}</strong>} · 현금 지출{' '}
+              매출 {formatWon(s.total_sales)} · 카드 {formatWon(s.card_amount)} · 현금 {formatWon(s.cash_amount)} · 기타{' '}
+              {formatWon(s.other_amount)}
+              {diff !== 0 && <strong className="text-danger"> · 차이 {formatWon(diff)}</strong>} · 현금 지출{' '}
               {formatWon(s.cash_expense)} · 체크카드 지출 {formatWon(s.check_card_expense)}
               {s.note && ` · 메모: ${s.note}`} — {names[s.submitted_by] ?? '?'} {formatDateTime(s.submitted_at)}
             </div>
@@ -200,47 +213,49 @@ export default async function ChecklistHistoryPage({
       </section>
 
       {isOwner && (
-        <section style={{ marginTop: 24, borderTop: '1px solid #ccc', paddingTop: 8 }}>
+        <section className="card">
           <h2>체크리스트 항목 관리 (사장)</h2>
           <p>
             항목은 지우지 않고 &quot;사용 중지&quot;합니다(지난 기록 보존). 이름을 바꾸려면 새 항목을 추가하고 기존
             항목을 사용 중지하세요.
           </p>
-          <table border={1} cellPadding={6} style={{ borderCollapse: 'collapse' }}>
-            <thead>
-              <tr>
-                <th>구분</th>
-                <th>업무</th>
-                <th>항목</th>
-                <th>종류</th>
-                <th>필수</th>
-                <th>상태</th>
-              </tr>
-            </thead>
-            <tbody>
-              {allItems.map((item) => (
-                <tr key={item.id} style={item.is_active ? undefined : { color: '#999' }}>
-                  <td>{PHASE_LABEL[item.phase]}</td>
-                  <td>{item.category}</td>
-                  <td>{item.title}</td>
-                  <td>
-                    {TYPE_LABEL[item.item_type]}
-                    {item.unit && ` (${item.unit})`}
-                  </td>
-                  <td>{item.is_required ? '필수' : '선택'}</td>
-                  <td>
-                    <form action={setItemActive}>
-                      <input type="hidden" name="item_id" value={item.id} />
-                      <input type="hidden" name="active" value={item.is_active ? '0' : '1'} />
-                      <input type="hidden" name="back" value={back} />
-                      {item.is_active ? '사용 중 ' : '중지 '}
-                      <button type="submit">{item.is_active ? '사용 중지' : '다시 사용'}</button>
-                    </form>
-                  </td>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>구분</th>
+                  <th>업무</th>
+                  <th>항목</th>
+                  <th>종류</th>
+                  <th>필수</th>
+                  <th>상태</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {allItems.map((item) => (
+                  <tr key={item.id} style={item.is_active ? undefined : { color: 'var(--faint)' }}>
+                    <td>{PHASE_LABEL[item.phase]}</td>
+                    <td>{item.category}</td>
+                    <td>{item.title}</td>
+                    <td>
+                      {TYPE_LABEL[item.item_type]}
+                      {item.unit && ` (${item.unit})`}
+                    </td>
+                    <td>{item.is_required ? '필수' : '선택'}</td>
+                    <td>
+                      <form action={setItemActive}>
+                        <input type="hidden" name="item_id" value={item.id} />
+                        <input type="hidden" name="active" value={item.is_active ? '0' : '1'} />
+                        <input type="hidden" name="back" value={back} />
+                        {item.is_active ? '사용 중 ' : '중지 '}
+                        <button type="submit">{item.is_active ? '사용 중지' : '다시 사용'}</button>
+                      </form>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           <h3>항목 추가</h3>
           <form action={addItem}>

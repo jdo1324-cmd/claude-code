@@ -16,7 +16,7 @@ function SaveButton({ disabled, mismatch, diff }: { disabled: boolean; mismatch:
     <button
       type="submit"
       disabled={disabled || pending}
-      style={{ fontSize: 18, padding: '8px 24px' }}
+      className="btn-lg"
       onClick={(e) => {
         if (
           mismatch &&
@@ -51,8 +51,7 @@ export function SalesForm({
     cash_expense: '',
     check_card_expense: '',
   })
-  const set = (key: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setV({ ...v, [key]: e.target.value })
+  const set = (key: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement>) => setV({ ...v, [key]: e.target.value })
 
   const total = toNumber(v.total_sales)
   const paymentSum = toNumber(v.card_amount) + toNumber(v.cash_amount) + toNumber(v.other_amount)
@@ -82,11 +81,11 @@ export function SalesForm({
   )
 
   return (
-    <form action={submitSalesReport} style={{ border: '1px solid #999', padding: 12 }}>
+    <form action={submitSalesReport} className="card">
       <h3>매출</h3>
       {field('total_sales', '오늘 총 매출')}
       {initialTotal != null && (
-        <p style={{ fontSize: 13, color: '#555' }}>
+        <p style={{ fontSize: 13, color: 'var(--muted)' }}>
           마감 체크리스트의 &quot;포스 매출 마감 금액&quot;({won(initialTotal)})으로 미리 채웠습니다.
         </p>
       )}
@@ -99,10 +98,7 @@ export function SalesForm({
         결제수단 합계: <strong>{won(paymentSum)}</strong>
       </p>
       {mismatch && (
-        <p
-          role="alert"
-          style={{ background: '#fee', border: '2px solid crimson', color: 'crimson', padding: 8, fontWeight: 'bold' }}
-        >
+        <p role="alert" className="alert alert-error">
           ⚠️ 결제수단 합계({won(paymentSum)})와 매출({won(total)})이 {won(Math.abs(diff))}{' '}
           {diff > 0 ? '많습니다' : '부족합니다'}. 금액을 다시 확인하세요.
         </p>

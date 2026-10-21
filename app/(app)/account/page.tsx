@@ -11,28 +11,40 @@ export default async function AccountPage({
     <main>
       <h1>내 비밀번호 변경</h1>
       {reset ? (
-        <p style={{ color: 'green' }}>메일 인증이 완료되었습니다. 새 비밀번호를 정해 주세요.</p>
+        <p className="alert alert-ok">메일 인증이 완료되었습니다. 새 비밀번호를 정해 주세요.</p>
       ) : (
         <p>
           지금 로그인한 본인의 비밀번호를 바꿉니다. 사장님이 만들어 준 임시 비밀번호는 처음 로그인한 뒤 바로 바꿔
           주세요.
         </p>
       )}
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
-      {ok && <p style={{ color: 'green' }}>비밀번호가 변경되었습니다.</p>}
-      <form action={changePassword}>
+      {error && <p className="alert alert-error">{error}</p>}
+      {ok && <p className="alert alert-ok">비밀번호가 변경되었습니다.</p>}
+      <form action={changePassword} className="card" style={{ maxWidth: 420 }}>
         <p>
-          <label>
+          <label style={{ display: 'block' }}>
             새 비밀번호 (8자 이상)
-            <br />
-            <input name="password" type="password" minLength={8} required autoComplete="new-password" />
+            <input
+              name="password"
+              type="password"
+              minLength={8}
+              required
+              autoComplete="new-password"
+              style={{ width: '100%', marginTop: 4 }}
+            />
           </label>
         </p>
         <p>
-          <label>
+          <label style={{ display: 'block' }}>
             새 비밀번호 확인
-            <br />
-            <input name="confirm" type="password" minLength={8} required autoComplete="new-password" />
+            <input
+              name="confirm"
+              type="password"
+              minLength={8}
+              required
+              autoComplete="new-password"
+              style={{ width: '100%', marginTop: 4 }}
+            />
           </label>
         </p>
         <button type="submit">변경</button>
