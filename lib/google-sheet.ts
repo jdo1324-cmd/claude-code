@@ -1,4 +1,5 @@
 import 'server-only'
+import { ATTENDANCE_SELECT, monthRange, netMinutes, type AttendanceRecord } from '@/lib/attendance'
 import { RECEIPT_BUCKET } from '@/lib/receipt-ai'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -133,6 +134,106 @@ export async function sendReceiptToSheet(receiptId: number, sentBy: string): Pro
   return reply
 }
 
+export type LaborReply = ScriptReply & {
+  tab?: string
+  created?: boolean
+  written?: string[]
+  added?: string[]
+  unmatched?: string[]
+}
+
+// 앱 기록이 처음 생긴 날 (그 전 날짜 칸은 사장님이 직접 적은 값이라 건드리지 않음)
+export async function firstAttendanceDate() {
+  const { data } = await createAdminClient()
+    .from('attendance')
+    .select('work_date')
+    .order('work_date')
+    .limit(1)
+    .maybeSingle()
+  return (data?.work_date as string | undefined) ?? null
+}
+
+// 그 달에 시트로 보낼 날짜 범위. 앱 기록이 없는 달이면 null.
+export function laborRange(month: string, firstDate: string | null, today: string) {
+  const { start, end } = monthRange(month)
+  if (!firstDate || firstDate > end || start > today) return null
+  const from = firstDate > start ? firstDate : start
+  const to = end < today ? end : today
+  return { fromDay: Number(from.slice(8)), toDay: Number(to.slice(8)) }
+}
+
+// 월별 출퇴근 기록 → "N월 인건비" 탭 날짜 칸
+// 정직원: 출근한 날 "출근" (조퇴 기준을 정하면 그보다 짧게 일한 날은 근무시간 숫자)
+// 아르바이트: 그날 실근무 시간 (휴게 제외, 소수점 둘째 자리)
+export async function sendLaborToSheet(
+  month: string,
+  earlyLeaveHours: number | null,
+  sentBy: string,
+  today: string,
+): Promise<LaborReply> {
+  const admin = createAdminClient()
+  const range = laborRange(month, await firstAttendanceDate(), today)
+  if (!range) return { ok: false, error: '이 달에는 앱 출퇴근 기록이 없습니다.' }
+  const { start, end } = monthRange(month)
+
+  const [{ data: profileData }, { data: recordData }] = await Promise.all([
+    admin.from('profiles').select('id, full_name, employment_type, is_active'),
+    admin
+      .from('attendance')
+      .select(ATTENDANCE_SELECT)
+      .eq('status', 'valid')
+      .gte('work_date', start)
+      .lte('work_date', end),
+  ])
+  const records = (recordData ?? []) as unknown as AttendanceRecord[]
+  const staff = (
+    (profileData ?? []) as { id: string; full_name: string; employment_type: string; is_active: boolean }[]
+  )
+    .map((p) => {
+      const mine = records.filter((r) => r.user_id === p.id)
+      const hourly = p.employment_type === 'part_time'
+      const days: Record<string, string | number> = {}
+      for (const r of mine) {
+        const day = Number(r.work_date.slice(8))
+        if (day < range.fromDay || day > range.toDay) continue
+        const net = netMinutes(r)
+        const hours = net === null ? null : Math.round((net / 60) * 100) / 100
+        if (hourly) {
+          if (hours !== null) days[String(day)] = hours // 근무 중인 기록은 끝난 뒤에 보냄
+        } else {
+          days[String(day)] = earlyLeaveHours && hours !== null && hours < earlyLeaveHours ? hours : '출근'
+        }
+      }
+      return {
+        name: p.full_name.trim(),
+        section: hourly ? 'hourly' : 'monthly',
+        days,
+        keep: p.is_active || mine.length > 0,
+      }
+    })
+    .filter((s) => s.keep)
+    .map(({ keep: _keep, ...s }) => s)
+
+  const [year, mon] = month.split('-').map(Number)
+  const reply = (await callScript(await getSheetSettings(), {
+    type: 'labor',
+    year,
+    month: mon,
+    tabName: `${mon}월 인건비`,
+    templateName: 'X월 인건비',
+    fromDay: range.fromDay,
+    toDay: range.toDay,
+    staff,
+  })) as LaborReply
+
+  if (reply.ok) {
+    await admin
+      .from('labor_sheet_exports')
+      .insert({ month, sent_by: sentBy, from_day: range.fromDay, to_day: range.toDay })
+  }
+  return reply
+}
+
 // 사장님이 구글 시트에 붙여 넣을 Apps Script 코드 (비밀값이 들어 있음)
 export function appsScriptSource(secret: string) {
   return `// 매장 운영 관리 앱 → 이 시트로 전표 받기
@@ -145,6 +246,7 @@ function doPost(e) {
   if (body.secret !== SECRET) return reply({ ok: false, error: '비밀값이 맞지 않습니다. 앱의 [구글 시트 연결] 화면에서 코드를 다시 복사해 붙여 넣으세요.' });
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (body.type === 'ping') return reply({ ok: true, sheetName: ss.getName(), url: ss.getUrl() });
+  if (body.type === 'labor') return reply(writeLabor(ss, body));
   if (body.type !== 'receipt') return reply({ ok: false, error: '알 수 없는 요청' });
 
   const lock = LockService.getScriptLock();
@@ -174,6 +276,82 @@ function doPost(e) {
       items.appendRow([r.id, r.date, text(r.vendor), it.no, text(it.name), it.quantity, text(it.unit), it.unitPrice, it.lineTotal]);
     });
     return reply({ ok: true, sheetName: ss.getName(), url: ss.getUrl() });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---------- 인건비 탭에 출퇴근 기록 넣기 ----------
+// "N월 인건비" 탭의 날짜 칸(1일~말일)만 채움. 수식 칸은 건드리지 않음.
+function writeLabor(ss, body) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    let sh = ss.getSheetByName(body.tabName);
+    let created = false;
+    if (!sh) {
+      const tpl = ss.getSheetByName(body.templateName);
+      if (!tpl) return { ok: false, error: '"' + body.tabName + '" 탭도, 복사할 "' + body.templateName + '" 탭도 없습니다.' };
+      sh = tpl.copyTo(ss).setName(body.tabName);
+      sh.getRange('B2').setValue(body.year);
+      sh.getRange('C2').setValue(body.month);
+      SpreadsheetApp.flush();
+      created = true;
+    }
+
+    const lastRow = sh.getLastRow();
+    const lastCol = sh.getLastColumn();
+    const names = sh.getRange(1, 1, lastRow, 1).getDisplayValues().map(function (r) { return String(r[0]).trim(); });
+    const headers = [];
+    names.forEach(function (v, i) { if (v === '직원') headers.push(i + 1); });
+    if (headers.length < 2) return { ok: false, error: '"' + body.tabName + '" 탭에서 "직원" 제목 줄(정직원 · 아르바이트)을 찾지 못했습니다.' };
+
+    const sections = { monthly: headers[0], hourly: headers[1] };
+    const result = { ok: true, sheetName: ss.getName(), url: ss.getUrl(), tab: body.tabName, created: created, written: [], added: [], unmatched: [] };
+
+    (body.staff || []).forEach(function (st) {
+      const headerRow = sections[st.section];
+      // 그 구역의 직원 줄: 제목 바로 아래부터 "만근일수/근무시간"(H열) 칸이 이어지는 곳까지
+      const hCol = sh.getRange(headerRow + 1, 8, 20, 1).getFormulas();
+      let count = 0;
+      while (count < hCol.length && hCol[count][0] !== '') count++;
+      if (count === 0) { result.unmatched.push(st.name); return; }
+
+      // 날짜 칸 위치: 제목 줄의 날짜(1일, 2일 …)
+      const head = sh.getRange(headerRow, 1, 1, lastCol).getValues()[0];
+      const dayCol = {};
+      head.forEach(function (v, i) {
+        if (v instanceof Date && v.getMonth() + 1 === Number(body.month)) dayCol[v.getDate()] = i + 1;
+      });
+      if (!dayCol[body.fromDay] || !dayCol[body.toDay]) { result.unmatched.push(st.name + ' (날짜 칸을 찾지 못함)'); return; }
+
+      let row = -1;
+      for (let i = 0; i < count; i++) {
+        if (names[headerRow + i] === st.name) { row = headerRow + 1 + i; break; }
+      }
+      if (row === -1) {
+        for (let i = 0; i < count; i++) {
+          if (names[headerRow + i] === '') {
+            row = headerRow + 1 + i;
+            sh.getRange(row, 1).setValue(st.name);
+            names[headerRow + i] = st.name;
+            result.added.push(st.name);
+            break;
+          }
+        }
+      }
+      if (row === -1) { result.unmatched.push(st.name + ' (빈 줄 없음)'); return; }
+
+      const from = dayCol[body.fromDay];
+      const values = [];
+      for (let d = body.fromDay; d <= body.toDay; d++) {
+        const v = st.days[String(d)];
+        values.push(v === undefined || v === null ? '' : v);
+      }
+      sh.getRange(row, from, 1, values.length).setValues([values]);
+      result.written.push(st.name);
+    });
+    return result;
   } finally {
     lock.releaseLock();
   }

@@ -24,9 +24,9 @@ export default async function GoogleSheetPage({
         <span className={connected ? 'badge badge-ok' : 'badge'}>{connected ? '연결됨' : '연결 안 됨'}</span>
       </div>
       <p className="small muted">
-        연결하면 [전표 확인] 화면에서 확정한 전표를 버튼 한 번으로 사장님의 구글 시트로 보낼 수 있습니다. 시트에는
-        &quot;전표&quot; 탭(전표 1건당 1줄)과 &quot;품목&quot; 탭(품목 1개당 1줄)이 자동으로 생기고, 사진은 사장님 구글
-        드라이브의 &quot;매장관리 전표 사진&quot; 폴더에 저장됩니다.
+        연결하면 두 가지를 버튼 한 번으로 보낼 수 있습니다. ① [전표 확인]에서 확정한 전표 → &quot;전표&quot; 탭(전표
+        1건당 1줄)과 &quot;품목&quot; 탭(품목 1개당 1줄). 사진은 구글 드라이브 &quot;매장관리 전표 사진&quot; 폴더에
+        저장됩니다. ② [월별 근무시간]의 출퇴근 기록 → &quot;N월 인건비&quot; 탭의 날짜 칸.
       </p>
       {error && <p className="alert alert-error">{error}</p>}
       {ok && <p className="alert alert-ok">{ok}</p>}
@@ -35,10 +35,8 @@ export default async function GoogleSheetPage({
         <h2>처음 한 번만 하면 됩니다 (PC에서 하는 것을 추천)</h2>
         <ol className="steps">
           <li>
-            <a href="https://sheets.new" target="_blank" rel="noreferrer">
-              sheets.new
-            </a>
-            를 열어 새 구글 시트를 만들고, 이름을 정합니다. (예: 매장 전표)
+            구글 드라이브에서 <strong>손익계산서</strong> 시트를 엽니다. (&quot;9월 인건비&quot;, &quot;X월 인건비&quot;
+            탭이 있는 그 파일)
           </li>
           <li>
             시트 위쪽 메뉴에서 <strong>확장 프로그램 → Apps Script</strong>를 누릅니다.

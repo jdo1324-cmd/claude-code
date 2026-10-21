@@ -8,9 +8,14 @@ import {
   validBreak,
   type AttendanceRecord,
 } from '@/lib/attendance'
+import { ConfirmButton } from '@/app/components/confirm-button'
 import { requireAdmin, type Profile } from '@/lib/auth'
+import { firstAttendanceDate, laborRange } from '@/lib/google-sheet'
 import { EMPLOYMENT_LABEL, ROLE_LABEL, todayKST } from '@/lib/format'
 import { createClient } from '@/lib/supabase/server'
+import { sendHoursToSheet } from './actions'
+
+export const maxDuration = 120
 
 type Summary = {
   days: number
@@ -39,14 +44,19 @@ function summarize(records: AttendanceRecord[], partTime: boolean): Summary {
   return s
 }
 
-export default async function HoursPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
-  const { month: monthParam } = await searchParams
-  await requireAdmin()
+export default async function HoursPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ month?: string; ok?: string; error?: string }>
+}) {
+  const { month: monthParam, ok, error: sendError } = await searchParams
+  const me = await requireAdmin()
+  const isOwner = me.role === 'owner'
   const month = isMonth(monthParam) ? monthParam : todayKST().slice(0, 7)
   const { start, end } = monthRange(month)
   const supabase = await createClient()
 
-  const [{ data: profileData }, { data: recordData, error }] = await Promise.all([
+  const [{ data: profileData }, { data: recordData, error }, firstDate, { data: exportData }] = await Promise.all([
     supabase.from('profiles').select('*').order('created_at', { ascending: true }),
     supabase
       .from('attendance')
@@ -54,7 +64,19 @@ export default async function HoursPage({ searchParams }: { searchParams: Promis
       .eq('status', 'valid') // 무효 기록은 합계에서 제외
       .gte('work_date', start)
       .lte('work_date', end),
+    isOwner ? firstAttendanceDate() : Promise.resolve(null),
+    isOwner
+      ? supabase
+          .from('labor_sheet_exports')
+          .select('sent_at, from_day, to_day')
+          .eq('month', month)
+          .order('sent_at', { ascending: false })
+          .limit(1)
+      : Promise.resolve({ data: [] }),
   ])
+  const range = laborRange(month, firstDate, todayKST())
+  const lastExport = (exportData ?? [])[0] as { sent_at: string; from_day: number; to_day: number } | undefined
+  const monthNo = Number(month.slice(5))
   const employees = (profileData ?? []) as Profile[]
   const records = (recordData ?? []) as unknown as AttendanceRecord[]
 
@@ -79,6 +101,8 @@ export default async function HoursPage({ searchParams }: { searchParams: Promis
         <input type="month" name="month" defaultValue={month} /> <button type="submit">보기</button>
       </form>
       {error && <p className="alert alert-error">기록을 불러오지 못했습니다: {error.message}</p>}
+      {sendError && <p className="alert alert-error">{sendError}</p>}
+      {ok && <p className="alert alert-ok">{ok}</p>}
       <p>
         {month} ({start} ~ {end}) · 유효한 기록만 합산 · 실근무 = 퇴근 − 출근 − 휴게시간(아르바이트)
       </p>
@@ -135,6 +159,54 @@ export default async function HoursPage({ searchParams }: { searchParams: Promis
           </tbody>
         </table>
       </div>
+      {isOwner && (
+        <section>
+          <div className="row" style={{ justifyContent: 'space-between' }}>
+            <h2 style={{ margin: 0 }}>손익계산서로 보내기</h2>
+            {lastExport && (
+              <span className="badge badge-ok">
+                마지막 전송 {lastExport.sent_at.slice(0, 10)} ({lastExport.from_day}~{lastExport.to_day}일)
+              </span>
+            )}
+          </div>
+          {range ? (
+            <form action={sendHoursToSheet}>
+              <input type="hidden" name="month" value={month} />
+              <p className="small muted">
+                구글 시트 &quot;{monthNo}월 인건비&quot; 탭의{' '}
+                <strong>
+                  날짜 칸({range.fromDay}일~{range.toDay}일)
+                </strong>
+                만 채웁니다. 이름이 같은 직원 줄을 찾아 정직원은 &quot;출근&quot;, 아르바이트는 그날 실근무 시간(휴게
+                제외)을 넣습니다. 수식 칸과 {range.fromDay > 1 ? `${range.fromDay - 1}일 이전 칸(앱 사용 전), ` : ''}
+                일용직 구역은 건드리지 않습니다. 탭이 없으면 &quot;X월 인건비&quot;를 복사해 만듭니다.
+              </p>
+              <label style={{ display: 'grid', gap: 4, maxWidth: 360 }}>
+                정직원 조퇴 기준 (선택)
+                <div className="row" style={{ flexWrap: 'nowrap' }}>
+                  <input name="early_leave_hours" inputMode="decimal" placeholder="예: 8" style={{ width: 100 }} />
+                  <span className="small muted">시간 미만 근무한 날은 &quot;출근&quot; 대신 근무시간으로</span>
+                </div>
+              </label>
+              <div style={{ marginTop: 12 }}>
+                <ConfirmButton
+                  message={`${monthNo}월 출퇴근 기록을 손익계산서 "${monthNo}월 인건비" 탭으로 보낼까요?\n${range.fromDay}일~${range.toDay}일 날짜 칸이 앱 기록으로 바뀝니다.`}
+                >
+                  📤 구글 시트로 전송
+                </ConfirmButton>
+              </div>
+            </form>
+          ) : (
+            <p className="muted">
+              이 달에는 앱 출퇴근 기록이 없어서 보낼 수 없습니다. (앱 기록은 {firstDate ?? '-'}부터)
+            </p>
+          )}
+          <p className="small muted" style={{ marginBottom: 0 }}>
+            구글 시트가 연결되어 있어야 합니다. → <Link href="/admin/google-sheet">구글 시트 연결</Link>
+          </p>
+        </section>
+      )}
+
       <p className="small muted">
         &quot;자동 퇴근&quot;은 실제 퇴근 시간과 다를 수 있으니 관리 화면에서 확인 후 정정하세요. 정규직은 휴게시간을
         따로 입력하지 않아 퇴근 − 출근 시간 그대로 합산됩니다.
