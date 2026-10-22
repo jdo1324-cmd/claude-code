@@ -7,6 +7,7 @@ import { formatTime, todayKST } from '@/lib/format'
 import { createClient } from '@/lib/supabase/server'
 import { clockNfc } from '../actions'
 import { ClockButton } from '../clock-button'
+import { AutoClock } from './auto-clock'
 
 const NEED_BREAK_MESSAGE =
   '휴게시간을 입력하지 않아 퇴근 처리가 되지 않았습니다.\n휴게시간을 먼저 입력한 뒤 다시 [퇴근]을 눌러 주세요.'
@@ -17,7 +18,8 @@ function isPastAutoClockOut(workDate: string) {
 }
 
 // 매장 NFC 태그에 들어 있는 주소: /nfc?t=매장코드
-// 링크 미리보기 등으로 실수로 기록되지 않도록, 태그를 찍으면 버튼 화면이 먼저 뜸.
+// 태그를 찍어 열리면 화면이 자동으로 출근/퇴근 처리 (auto-clock.tsx).
+// 서버는 주소를 열기만 해서는 기록하지 않음 → 링크 미리보기 등으로 잘못 기록되지 않음.
 export default async function NfcPage({
   searchParams,
 }: {
@@ -28,6 +30,8 @@ export default async function NfcPage({
   const supabase = await createClient()
   const today = todayKST()
   const back = `/nfc?t=${encodeURIComponent(t)}`
+  // 화면을 만든 시각: 오래 열려 있던 화면에서는 자동 처리하지 않음
+  const renderedAt = Date.now()
 
   const { data } = await supabase
     .from('attendance')
@@ -66,11 +70,15 @@ export default async function NfcPage({
         ) : (
           <>
             {isPartTime && <p className="small muted">휴게시간 {(validBreak(working) ?? 0) / 60}시간 · 입력 완료</p>}
-            <form action={clockNfc}>
-              <input type="hidden" name="t" value={t} />
-              <input type="hidden" name="action" value="out" />
-              <ClockButton working />
-            </form>
+            {error || need_break ? (
+              <form action={clockNfc}>
+                <input type="hidden" name="t" value={t} />
+                <input type="hidden" name="action" value="out" />
+                <ClockButton working />
+              </form>
+            ) : (
+              <AutoClock token={t} working renderedAt={renderedAt} />
+            )}
           </>
         )}
       </>
@@ -101,11 +109,15 @@ export default async function NfcPage({
           지금 시각
         </p>
         {openRow && <p className="small muted">지난 근무는 21:00로 자동 퇴근 처리됩니다.</p>}
-        <form action={clockNfc}>
-          <input type="hidden" name="t" value={t} />
-          <input type="hidden" name="action" value="in" />
-          <ClockButton working={false} />
-        </form>
+        {error ? (
+          <form action={clockNfc}>
+            <input type="hidden" name="t" value={t} />
+            <input type="hidden" name="action" value="in" />
+            <ClockButton working={false} />
+          </form>
+        ) : (
+          <AutoClock token={t} working={false} renderedAt={renderedAt} />
+        )}
       </>
     )
   }

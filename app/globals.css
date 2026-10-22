@@ -1041,3 +1041,13 @@ th.num {
   overflow: auto;
   white-space: pre;
 }
+
+/* NFC 자동 출퇴근 안내 */
+.auto-clock-status {
+  margin-top: 20px;
+  font-size: 18px;
+}
+
+.auto-clock-status p {
+  margin: 0 0 12px;
+}
