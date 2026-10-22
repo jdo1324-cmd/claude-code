@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useFormStatus } from 'react-dom'
 import { clockNfc } from '../actions'
 
@@ -44,10 +44,16 @@ function Status({
   )
 }
 
-function ManualButton({ working }: { working: boolean }) {
+// 퇴근 버튼도 바로 처리하지 않고 똑같이 카운트다운 (실수로 눌렀을 때 취소할 수 있게)
+function ManualButton({ working, onClockOut }: { working: boolean; onClockOut: () => void }) {
   const { pending } = useFormStatus()
   return (
-    <button type="submit" disabled={pending} className={working ? 'clock-button out' : 'clock-button'}>
+    <button
+      type={working ? 'button' : 'submit'}
+      onClick={working ? onClockOut : undefined}
+      disabled={pending}
+      className={working ? 'clock-button out' : 'clock-button'}
+    >
       {pending ? '처리 중…' : working ? '퇴근' : '출근'}
     </button>
   )
@@ -57,11 +63,13 @@ export function AutoClock({
   token,
   working,
   renderedAt,
+  autoStart = true,
   outDelaySeconds = 10,
 }: {
   token: string
   working: boolean
   renderedAt: number
+  autoStart?: boolean
   outDelaySeconds?: number
 }) {
   const formRef = useRef<HTMLFormElement>(null)
@@ -69,32 +77,42 @@ export function AutoClock({
   const [mode, setMode] = useState<'checking' | 'auto' | 'manual'>('checking')
   const [countdown, setCountdown] = useState<number | null>(null)
 
-  useEffect(() => {
-    if (!isFreshTagOpen(renderedAt)) {
-      setMode('manual')
-      return
-    }
+  const stopCountdown = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    timerRef.current = null
+  }, [])
+
+  const startCountdown = useCallback(() => {
+    stopCountdown()
     setMode('auto')
-    // 출근은 바로, 퇴근은 실수로 스친 경우를 위해 몇 초 기다렸다가
-    if (!working) {
-      formRef.current?.requestSubmit()
-      return
-    }
     let left = outDelaySeconds
     setCountdown(left)
-    const timer = setInterval(() => {
+    timerRef.current = setInterval(() => {
       left -= 1
       if (left <= 0) {
-        clearInterval(timer)
+        stopCountdown()
         setCountdown(null)
         formRef.current?.requestSubmit()
       } else {
         setCountdown(left)
       }
     }, 1000)
-    timerRef.current = timer
-    return () => clearInterval(timer)
-  }, [renderedAt, working, outDelaySeconds])
+  }, [outDelaySeconds, stopCountdown])
+
+  useEffect(() => {
+    if (!autoStart || !isFreshTagOpen(renderedAt)) {
+      setMode('manual')
+      return
+    }
+    // 출근은 바로, 퇴근은 실수로 스친 경우를 위해 기다렸다가
+    if (!working) {
+      setMode('auto')
+      formRef.current?.requestSubmit()
+      return
+    }
+    startCountdown()
+    return stopCountdown
+  }, [autoStart, renderedAt, working, startCountdown, stopCountdown])
 
   return (
     <form action={clockNfc} ref={formRef}>
@@ -105,13 +123,13 @@ export function AutoClock({
           working={working}
           countdown={countdown}
           onCancel={() => {
-            if (timerRef.current) clearInterval(timerRef.current)
+            stopCountdown()
             setCountdown(null)
             setMode('manual')
           }}
         />
       ) : (
-        mode === 'manual' && <ManualButton working={working} />
+        mode === 'manual' && <ManualButton working={working} onClockOut={startCountdown} />
       )}
     </form>
   )

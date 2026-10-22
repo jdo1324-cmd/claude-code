@@ -70,15 +70,8 @@ export default async function NfcPage({
         ) : (
           <>
             {isPartTime && <p className="small muted">휴게시간 {(validBreak(working) ?? 0) / 60}시간 · 입력 완료</p>}
-            {error || need_break ? (
-              <form action={clockNfc}>
-                <input type="hidden" name="t" value={t} />
-                <input type="hidden" name="action" value="out" />
-                <ClockButton working />
-              </form>
-            ) : (
-              <AutoClock token={t} working renderedAt={renderedAt} />
-            )}
+            {/* 오류 화면에서는 자동으로 시작하지 않음. 퇴근 버튼을 눌러도 같은 카운트다운 */}
+            <AutoClock token={t} working renderedAt={renderedAt} autoStart={!error && !need_break} />
           </>
         )}
       </>
