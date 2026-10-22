@@ -57,7 +57,7 @@ export function AutoClock({
   token,
   working,
   renderedAt,
-  outDelaySeconds = 3,
+  outDelaySeconds = 10,
 }: {
   token: string
   working: boolean
