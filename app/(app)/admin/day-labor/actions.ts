@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { isMonth } from '@/lib/attendance'
 import { requireAdmin } from '@/lib/auth'
-import { sendDayLaborRrnToSheet, sendDayLaborToSheet } from '@/lib/google-sheet'
+import { getSheetSettings, sendDayLaborRrnToSheet, sendDayLaborToSheet } from '@/lib/google-sheet'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 function back(month: string, key: 'ok' | 'error', message: string): never {
@@ -15,6 +15,16 @@ function back(month: string, key: 'ok' | 'error', message: string): never {
 function amount(value: FormDataEntryValue | null) {
   const raw = String(value ?? '').replace(/[,\s원]/g, '')
   return raw === '' ? 0 : Number(raw)
+}
+
+// 기록을 추가하거나 지울 때마다 그 달 일용직 구역을 앱 기록과 똑같이 맞춤 (시트가 연결돼 있을 때)
+async function syncSheet(month: string, userId: string) {
+  if (!(await getSheetSettings()).webhook_url) return ''
+  const reply = await sendDayLaborToSheet(month, userId)
+  if (!reply.ok)
+    return `\n⚠️ 구글 시트에는 반영하지 못했습니다: ${reply.error} — 아래 [구글 시트로 전송]으로 다시 보내 주세요.`
+  if (reply.unmatched?.length) return `\n⚠️ 시트에 넣지 못한 사람: ${reply.unmatched.join(', ')}`
+  return ' 구글 시트에도 반영했습니다.'
 }
 
 // 일용직 근무 기록 추가
@@ -54,10 +64,10 @@ export async function addDayLabor(formData: FormData) {
       created_by: me.id,
     })
   if (error) back(month, 'error', '저장하지 못했습니다: ' + error.message)
-  back(month, 'ok', `${date} ${name} 기록을 추가했습니다.${rrnNote}`)
+  back(month, 'ok', `${date} ${name} 기록을 추가했습니다.${rrnNote}${await syncSheet(month, me.id)}`)
 }
 
-// 잘못 적은 기록 지우기 (기록은 "지움"으로 남고, 다음 시트 전송 때 그 칸을 비움)
+// 잘못 적은 기록 지우기 (기록은 "지움"으로 남고, 시트의 그 칸은 비움)
 export async function voidDayLabor(formData: FormData) {
   const me = await requireAdmin()
   const month = String(formData.get('month') ?? '')
@@ -67,7 +77,7 @@ export async function voidDayLabor(formData: FormData) {
     .eq('id', Number(formData.get('id')))
     .eq('status', 'valid')
   if (error) back(month, 'error', '지우지 못했습니다: ' + error.message)
-  back(month, 'ok', '기록을 지웠습니다. 구글 시트에는 다음 전송 때 반영됩니다.')
+  back(month, 'ok', `기록을 지웠습니다.${await syncSheet(month, me.id)}`)
 }
 
 export async function sendDayLaborSheet(formData: FormData) {

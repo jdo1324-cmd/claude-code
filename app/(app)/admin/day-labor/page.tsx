@@ -127,7 +127,7 @@ export default async function DayLaborPage({
           </label>
           <label>
             일급 (원)
-            <input name="daily_wage" required inputMode="numeric" placeholder="예: 130,000" />
+            <input name="daily_wage" required inputMode="numeric" defaultValue="130000" placeholder="예: 130,000" />
           </label>
           <label>
             추가근무 수당 (원)
@@ -263,13 +263,14 @@ export default async function DayLaborPage({
         <p className="small muted">
           손익계산서 &quot;{m}월 인건비&quot; 탭의 <strong>일용직 구역(&quot;성함&quot; 줄 아래)</strong>에서 이름이
           같은 줄을 찾아 날짜 칸에 근무시간을 넣습니다. 일급·추가근무 수당은 그 칸의 메모로 남깁니다. 시트에 없는 이름은
-          빈 줄에 추가합니다. 앱에서 지운 기록의 칸은 비웁니다. 수식 칸은 건드리지 않습니다.
+          빈 줄에 추가합니다. 앱에서 지운 기록의 칸은 비웁니다. 수식 칸은 건드리지 않습니다. 기록을 추가하거나 지우면
+          자동으로 반영되고, 이 버튼은 시트를 앱 기록과 다시 맞출 때 씁니다.
         </p>
         {sheetConnected ? (
           <form action={sendDayLaborSheet}>
             <input type="hidden" name="month" value={month} />
             <ConfirmButton message={`${m}월 일용직 기록 ${valid.length}건을 손익계산서로 보낼까요?`}>
-              📤 {m}월 기록 구글 시트로 전송
+              📤 {m}월 기록 구글 시트로 다시 보내기
             </ConfirmButton>
           </form>
         ) : (
