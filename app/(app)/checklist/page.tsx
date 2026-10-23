@@ -121,7 +121,7 @@ export default async function ChecklistPage({
       {/* 다른 직원이 체크하면 바로 반영 */}
       <RealtimeRefresh table="checklist_entries" filter={`work_date=eq.${date}`} />
       <div className="page-head">
-        <h1>오픈·마감 체크리스트</h1>
+        <h1>오늘 체크리스트</h1>
         <span className="muted">{date}</span>
       </div>
       <p className="small muted">
@@ -140,6 +140,7 @@ export default async function ChecklistPage({
 
       {PHASES.map((phase) => {
         const p = progress(items, entries, phase)
+        if (p.allTotal === 0) return null // 오늘 할 항목이 없는 구분 (예: 미들 항목이 없는 요일)
         const allRequired = p.requiredDone === p.requiredTotal
         return (
           <section key={phase}>

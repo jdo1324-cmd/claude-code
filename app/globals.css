@@ -1191,3 +1191,60 @@ a.cal-day:hover {
 #form {
   scroll-margin-top: 80px;
 }
+
+/* 체크리스트 항목: 하는 요일 고르기 */
+.weekday-picker {
+  margin: 0;
+  padding: 10px 12px 12px;
+}
+
+.weekday-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+}
+
+.weekday-chips label {
+  display: inline-flex;
+  position: relative;
+}
+
+.weekday-chips input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+}
+
+.weekday-chips span {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+
+.weekday-chips .sun span {
+  color: var(--danger);
+}
+
+.weekday-chips .sat span {
+  color: var(--info);
+}
+
+.weekday-chips input:checked + span {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+}
+
+.weekday-chips input:focus-visible + span {
+  outline: 3px solid color-mix(in srgb, var(--primary) 45%, transparent);
+  outline-offset: 2px;
+}

@@ -59,6 +59,7 @@ export default async function ChecklistHistoryPage({
 
       {PHASES.map((phase) => {
         const p = progress(items, entries, phase)
+        if (p.allTotal === 0 && !items.some((i) => i.phase === phase)) return null
         return (
           <section key={phase} style={{ marginTop: 16 }}>
             <h2>

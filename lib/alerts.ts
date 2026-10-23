@@ -1,6 +1,6 @@
 import 'server-only'
 import { ATTENDANCE_SELECT, validBreak, type AttendanceRecord } from '@/lib/attendance'
-import type { ChecklistEntry, ChecklistItem } from '@/lib/checklist'
+import { PHASES, PHASE_LABEL, appliesOn, type ChecklistEntry, type ChecklistItem } from '@/lib/checklist'
 import type { createClient } from '@/lib/supabase/server'
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
@@ -46,7 +46,9 @@ export async function findAlerts(supabase: Supabase, today: string, days = 7): P
   const allItems = (items.data ?? []) as ChecklistItem[]
   const done = (entries.data ?? []) as ChecklistEntry[]
   const salesDates = new Set(((sales.data ?? []) as { work_date: string }[]).map((s) => s.work_date))
-  const names = Object.fromEntries(((profiles.data ?? []) as { id: string; full_name: string }[]).map((p) => [p.id, p.full_name]))
+  const names = Object.fromEntries(
+    ((profiles.data ?? []) as { id: string; full_name: string }[]).map((p) => [p.id, p.full_name]),
+  )
 
   const alerts: Alert[] = []
   for (let date = from; date <= today; date = addDays(date, 1)) {
@@ -54,25 +56,32 @@ export async function findAlerts(supabase: Supabase, today: string, days = 7): P
     if (dayRecords.length === 0) continue // 근무 기록이 없는 날(휴무 등)은 건너뜀
     const nameOf = (r: (typeof dayRecords)[number]) => r.profiles?.full_name ?? '?'
 
-    // 1) 오픈·마감 필수 업무 누락 → 그 시간대 근무자에게 연결
-    for (const phase of ['open', 'close'] as const) {
-      const deadline = phase === 'open' ? kst(date, '12:00') : kst(date, '21:30')
+    // 1) 오픈·미들·마감 필수 업무 누락 → 그 시간대 근무자에게 연결
+    //    점검 시각: 오픈 12:00, 미들 17:00, 마감 21:30 (그날 하는 요일의 항목만)
+    for (const phase of PHASES) {
+      const deadline = kst(date, phase === 'open' ? '12:00' : phase === 'middle' ? '17:00' : '21:30')
       if (now < deadline) continue
       const missing = allItems.filter(
         (i) =>
-          i.phase === phase && i.is_required && i.is_active &&
+          i.phase === phase &&
+          i.is_required &&
+          i.is_active &&
+          appliesOn(i, date) &&
           !done.some((e) => e.item_id === i.id && e.work_date === date),
       )
       if (missing.length === 0) continue
       const shift = dayRecords.filter((r) =>
         phase === 'open'
           ? new Date(r.clock_in).getTime() <= kst(date, '11:30')
-          : r.clock_out === null || r.auto_clock_out || new Date(r.clock_out).getTime() >= kst(date, '20:30'),
+          : phase === 'middle'
+            ? new Date(r.clock_in).getTime() <= kst(date, '16:00') &&
+              (r.clock_out === null || r.auto_clock_out || new Date(r.clock_out).getTime() >= kst(date, '15:00'))
+            : r.clock_out === null || r.auto_clock_out || new Date(r.clock_out).getTime() >= kst(date, '20:30'),
       )
       alerts.push({
         date,
         kind: '필수 업무 누락',
-        message: `${phase === 'open' ? '오픈' : '마감'} 필수 업무 ${missing.length}개 미완료: ${missing.map((m) => m.title).join(', ')}`,
+        message: `${PHASE_LABEL[phase].replace(' 업무', '')} 필수 업무 ${missing.length}개 미완료: ${missing.map((m) => m.title).join(', ')}`,
         people: shift.length ? shift.map(nameOf) : ['(그 시간 근무자 기록 없음)'],
         href: `/admin/checklists?date=${date}`,
       })
@@ -106,7 +115,9 @@ export async function findAlerts(supabase: Supabase, today: string, days = 7): P
 
     // 4) 매출 보고서 미제출
     if (!salesDates.has(date) && now >= kst(date, '22:00')) {
-      const closers = dayRecords.filter((r) => r.clock_out === null || r.auto_clock_out || new Date(r.clock_out).getTime() >= kst(date, '20:30'))
+      const closers = dayRecords.filter(
+        (r) => r.clock_out === null || r.auto_clock_out || new Date(r.clock_out).getTime() >= kst(date, '20:30'),
+      )
       alerts.push({
         date,
         kind: '매출 보고서 미제출',
@@ -118,7 +129,12 @@ export async function findAlerts(supabase: Supabase, today: string, days = 7): P
   }
 
   // 5) 사진 항목인데 사진 없이(또는 파일이 사라진 채) 완료된 기록
-  for (const p of (photoIssues.data ?? []) as { work_date: string; item_title: string; done_by: string; problem: string }[]) {
+  for (const p of (photoIssues.data ?? []) as {
+    work_date: string
+    item_title: string
+    done_by: string
+    problem: string
+  }[]) {
     alerts.push({
       date: p.work_date,
       kind: '사진 없는 완료',

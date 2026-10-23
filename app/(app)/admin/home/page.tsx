@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { RealtimeRefresh } from '@/app/components/realtime-refresh'
 import { findAlerts } from '@/lib/alerts'
 import { requireAdmin, type Profile } from '@/lib/auth'
-import { loadChecklist, progress } from '@/lib/checklist'
+import { PHASES, PHASE_LABEL, loadChecklist, progress } from '@/lib/checklist'
 import { formatTime, todayKST } from '@/lib/format'
 import { SALES_SELECT, formatWon, paymentDiff, type SalesReport } from '@/lib/sales'
 import { createClient } from '@/lib/supabase/server'
@@ -52,8 +52,10 @@ export default async function AdminHomePage() {
   const posEntry = checklist.entries.find(
     (e) => e.status === 'valid' && checklist.items.find((i) => i.id === e.item_id)?.title === '포스 매출 마감 금액',
   )
-  const openP = progress(checklist.items, checklist.entries, 'open')
-  const closeP = progress(checklist.items, checklist.entries, 'close')
+  const phaseProgress = PHASES.map((phase) => ({
+    phase,
+    p: progress(checklist.items, checklist.entries, phase),
+  })).filter(({ p }) => p.allTotal > 0)
   const pendingTotal = (correctionCount ?? 0) + (receiptCount ?? 0)
   const todayAlerts = alerts.filter((a) => a.date === today)
 
@@ -119,12 +121,14 @@ export default async function AdminHomePage() {
         <section className="card">
           <div className="stat-label">오늘 체크리스트 (필수)</div>
           <div className="big-number" style={{ display: 'flex', flexDirection: 'column' }}>
-            <span style={{ color: openP.requiredDone === openP.requiredTotal ? 'var(--success)' : 'var(--danger)' }}>
-              오픈 {openP.requiredDone}/{openP.requiredTotal}
-            </span>{' '}
-            <span style={{ color: closeP.requiredDone === closeP.requiredTotal ? 'var(--success)' : 'var(--danger)' }}>
-              마감 {closeP.requiredDone}/{closeP.requiredTotal}
-            </span>
+            {phaseProgress.map(({ phase, p }) => (
+              <span
+                key={phase}
+                style={{ color: p.requiredDone === p.requiredTotal ? 'var(--success)' : 'var(--danger)' }}
+              >
+                {PHASE_LABEL[phase].replace(' 업무', '')} {p.requiredDone}/{p.requiredTotal}
+              </span>
+            ))}
           </div>
           <div className="small">
             <Link href={`/admin/checklists?date=${today}`}>자세히 보기</Link>
@@ -167,7 +171,8 @@ export default async function AdminHomePage() {
       </div>
       <ul className="small muted">
         <li>
-          필수 업무 누락: 오픈은 12:00, 마감은 21:30이 지나도 안 된 필수 항목. 그 시간대 근무자를 함께 표시합니다.
+          필수 업무 누락: 오픈은 12:00, 미들은 17:00, 마감은 21:30이 지나도 안 된 필수 항목. 그 시간대 근무자를 함께
+          표시합니다.
         </li>
         <li>
           사진 없는 완료: 사진 항목인데 사진이 없거나 파일이 사라진 완료 기록 (앱에서는 사진 없이 완료할 수 없게 막혀

@@ -1,7 +1,17 @@
 import Link from 'next/link'
 import { addItem, moveItem, setItemActive, updateItem } from '@/app/(app)/checklist/actions'
 import { requireOwner } from '@/lib/auth'
-import { PHASES, PHASE_LABEL, TYPE_LABEL, groupByCategory, type ChecklistItem, type Phase } from '@/lib/checklist'
+import {
+  PHASES,
+  PHASE_LABEL,
+  TYPE_LABEL,
+  WEEKDAY_LABEL,
+  WEEKDAY_ORDER,
+  groupByCategory,
+  weekdaysLabel,
+  type ChecklistItem,
+  type Phase,
+} from '@/lib/checklist'
 import { createClient } from '@/lib/supabase/server'
 
 const BACK = '/admin/checklist-items'
@@ -49,6 +59,18 @@ function ItemFields({ item }: { item?: ChecklistItem }) {
         단위 (숫자 입력일 때)
         <input name="unit" defaultValue={item?.unit ?? ''} placeholder="예: ℃, 원, 개" />
       </label>
+      <fieldset className="weekday-picker">
+        <legend>하는 요일</legend>
+        <div className="weekday-chips">
+          {WEEKDAY_ORDER.map((d) => (
+            <label key={d} className={d === 0 ? 'sun' : d === 6 ? 'sat' : undefined}>
+              <input type="checkbox" name="weekdays" value={d} defaultChecked={!!item?.weekdays?.includes(d)} />
+              <span>{WEEKDAY_LABEL[d]}</span>
+            </label>
+          ))}
+        </div>
+        <span className="small muted">아무것도 고르지 않으면 매일 합니다.</span>
+      </fieldset>
       <label className="check-label">
         <input type="checkbox" name="is_required" defaultChecked={item ? item.is_required : true} /> 필수 항목
         <span className="small muted"> (끄면 &quot;선택&quot; 항목)</span>
@@ -71,6 +93,7 @@ function ItemCard({ item, first, last }: { item: ChecklistItem; first: boolean; 
               {TYPE_LABEL[item.item_type]}
               {item.unit && ` (${item.unit})`}
             </span>
+            <span className={item.weekdays ? 'badge badge-warn' : 'badge'}>📅 {weekdaysLabel(item.weekdays)}</span>
           </div>
         </div>
         <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>
@@ -181,10 +204,13 @@ export default async function ChecklistItemsPage({
           <input type="hidden" name="back" value={BACK} />
           <div className="item-fields">
             <label>
-              오픈 / 마감
+              오픈 / 미들 / 마감
               <select name="phase" defaultValue="open">
-                <option value="open">오픈 업무</option>
-                <option value="close">마감 업무</option>
+                {PHASES.map((ph) => (
+                  <option key={ph} value={ph}>
+                    {PHASE_LABEL[ph]}
+                  </option>
+                ))}
               </select>
             </label>
           </div>

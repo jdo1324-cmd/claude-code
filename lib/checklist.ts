@@ -3,7 +3,7 @@ import type { createClient } from '@/lib/supabase/server'
 
 type Supabase = Awaited<ReturnType<typeof createClient>>
 
-export type Phase = 'open' | 'close'
+export type Phase = 'open' | 'middle' | 'close'
 export type ItemType = 'check' | 'number' | 'photo'
 
 export type ChecklistItem = {
@@ -16,6 +16,7 @@ export type ChecklistItem = {
   is_required: boolean
   sort_order: number
   is_active: boolean
+  weekdays: number[] | null // 하는 요일 (0=일 … 6=토). null 이면 매일
 }
 
 export type ChecklistEntry = {
@@ -33,8 +34,25 @@ export type ChecklistEntry = {
   void_reason: string | null
 }
 
-export const PHASES: Phase[] = ['open', 'close']
-export const PHASE_LABEL = { open: '오픈 업무', close: '마감 업무' } as const
+export const PHASES: Phase[] = ['open', 'middle', 'close']
+export const PHASE_LABEL = { open: '오픈 업무', middle: '미들 업무', close: '마감 업무' } as const
+
+// 요일 (화면에는 월요일부터)
+export const WEEKDAY_LABEL = ['일', '월', '화', '수', '목', '금', '토'] as const
+export const WEEKDAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const
+
+export function weekdaysLabel(days: number[] | null) {
+  if (!days || days.length === 0 || days.length === 7) return '매일'
+  return WEEKDAY_ORDER.filter((d) => days.includes(d))
+    .map((d) => WEEKDAY_LABEL[d])
+    .join('·')
+}
+
+// 그날(YYYY-MM-DD) 하는 항목인지
+export function appliesOn(item: Pick<ChecklistItem, 'weekdays'>, date: string) {
+  if (!item.weekdays || item.weekdays.length === 0) return true
+  return item.weekdays.includes(new Date(`${date}T00:00:00Z`).getUTCDay())
+}
 export const TYPE_LABEL = { check: '✔ 체크', number: '🔢 숫자 입력', photo: '📷 사진 필수' } as const
 export const PHOTO_BUCKET = 'checklist-photos'
 
@@ -47,8 +65,10 @@ export async function loadChecklist(supabase: Supabase, date: string) {
   ])
   const entries = (entryData ?? []) as ChecklistEntry[]
   const usedItemIds = new Set(entries.map((e) => e.item_id))
-  // 사용 중인 항목 + (사용 중지됐어도) 그날 기록이 있는 항목
-  const items = ((itemData ?? []) as ChecklistItem[]).filter((i) => i.is_active || usedItemIds.has(i.id))
+  // 그날 하는 사용 중인 항목 + (사용 중지됐거나 다른 요일 항목이어도) 그날 기록이 있는 항목
+  const items = ((itemData ?? []) as ChecklistItem[]).filter(
+    (i) => (i.is_active && appliesOn(i, date)) || usedItemIds.has(i.id),
+  )
 
   const names: Record<string, string> = {}
   for (const n of (nameData ?? []) as { id: string; full_name: string }[]) names[n.id] = n.full_name

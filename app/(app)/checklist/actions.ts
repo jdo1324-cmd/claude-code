@@ -70,17 +70,28 @@ export async function voidEntry(formData: FormData) {
 
 // ---------- 항목 관리 (사장) ----------
 
+// 체크한 요일 (0=일 … 6=토). 하나도 안 고르면 매일(null)
+function weekdaysFrom(formData: FormData) {
+  const days = formData
+    .getAll('weekdays')
+    .map(Number)
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+  return days.length === 0 || days.length === 7 ? null : days
+}
+
 export async function addItem(formData: FormData) {
   await requireOwner()
   const back = safePath(formData.get('back'), '/admin/checklists')
   const supabase = await createClient()
-  const { error } = await supabase.rpc('add_checklist_item', {
+  const { error } = await supabase.rpc('save_checklist_item', {
+    p_item_id: null,
     p_phase: String(formData.get('phase') ?? ''),
     p_category: String(formData.get('category') ?? ''),
     p_title: String(formData.get('title') ?? ''),
     p_item_type: String(formData.get('item_type') ?? ''),
     p_unit: String(formData.get('unit') ?? ''),
     p_is_required: formData.get('is_required') === 'on',
+    p_weekdays: weekdaysFrom(formData),
   })
   if (error) backTo(back, 'error', error.message)
   backTo(back, 'ok', '항목을 추가했습니다.')
@@ -103,13 +114,15 @@ export async function updateItem(formData: FormData) {
   const back = safePath(formData.get('back'), '/admin/checklist-items')
   const itemId = Number(formData.get('item_id'))
   const supabase = await createClient()
-  const { data: newId, error } = await supabase.rpc('update_checklist_item', {
+  const { data: newId, error } = await supabase.rpc('save_checklist_item', {
     p_item_id: itemId,
+    p_phase: null,
     p_category: String(formData.get('category') ?? ''),
     p_title: String(formData.get('title') ?? ''),
     p_item_type: String(formData.get('item_type') ?? ''),
     p_unit: String(formData.get('unit') ?? ''),
     p_is_required: formData.get('is_required') === 'on',
+    p_weekdays: weekdaysFrom(formData),
   })
   if (error) backTo(back, 'error', error.message)
   backTo(
