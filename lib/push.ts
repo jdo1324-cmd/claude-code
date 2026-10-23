@@ -1,5 +1,6 @@
 import 'server-only'
 import webpush from 'web-push'
+import { notifyAdminsJandi } from '@/lib/jandi'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 type Vapid = { publicKey: string; privateKey: string }
@@ -73,23 +74,29 @@ async function send(subs: { id: number; endpoint: string; p256dh: string; auth: 
   return (await sendDetailed(subs, message)).filter((r) => r.ok).length
 }
 
-// 사장/관리자(알림을 켠 사람)에게 보내기
+// 사장/관리자에게 보내기: 휴대폰 웹 알림(켠 사람) + 잔디 1:1(연결했을 때) 둘 다
 export async function notifyAdmins(message: PushMessage) {
-  try {
-    const admin = createAdminClient()
-    const { data } = await admin
-      .from('push_subscriptions')
-      .select('id, endpoint, p256dh, auth, profiles!inner(role, is_active)')
-      .in('profiles.role', ['owner', 'manager'])
-      .eq('profiles.is_active', true)
-    return await send(
-      (data ?? []) as unknown as { id: number; endpoint: string; p256dh: string; auth: string }[],
-      message,
-    )
-  } catch (err) {
-    console.error('notifyAdmins failed', err)
-    return 0
-  }
+  const [pushed] = await Promise.all([
+    (async () => {
+      try {
+        const admin = createAdminClient()
+        const { data } = await admin
+          .from('push_subscriptions')
+          .select('id, endpoint, p256dh, auth, profiles!inner(role, is_active)')
+          .in('profiles.role', ['owner', 'manager'])
+          .eq('profiles.is_active', true)
+        return await send(
+          (data ?? []) as unknown as { id: number; endpoint: string; p256dh: string; auth: string }[],
+          message,
+        )
+      } catch (err) {
+        console.error('notifyAdmins failed', err)
+        return 0
+      }
+    })(),
+    notifyAdminsJandi({ title: message.title, body: message.body, url: message.url }),
+  ])
+  return pushed
 }
 
 export async function notifyUser(userId: string, message: PushMessage) {
