@@ -5,7 +5,8 @@ import { z } from 'zod'
 import { notifyAdmins } from '@/lib/push'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const MODEL = 'claude-opus-5-5'
+// 비용을 줄이려고 Haiku 사용 (사장님 결정 2026-10-23). 정확도가 아쉬우면 claude-sonnet-5-5 / claude-opus-5-5 로.
+const MODEL = 'claude-haiku-5-5'
 export const RECEIPT_BUCKET = 'receipt-photos'
 
 // AI가 돌려줄 형식. 이 값은 "제안"일 뿐이고, 관리자가 확정해야 실제 기록이 됨.
@@ -105,9 +106,6 @@ export async function readReceipt(receiptId: number) {
     const response = await client.beta.messages.parse({
       model: MODEL,
       max_tokens: 16000,
-      // 안전 분류기가 잘못 거절해도 다른 모델이 이어서 처리 (서버 측 기본 대체)
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
       output_config: { effort: 'medium', format: betaZodOutputFormat(ReceiptProposalSchema) },
       messages: [{ role: 'user', content: [...images, { type: 'text', text: prompt(images.length) }] }],
     })
