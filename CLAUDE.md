@@ -35,6 +35,9 @@
     Apps Script `baseQty` (D=1개당 g, E·F=박스, G·H=안에 든 개수·단위, I·J=최소 단위).
 - 평균단가 탭에서 크기별로 나눈 품목(감자 10kg · 감자 20kg)은 전표 품목명의 크기로 고름. "감자 (종합)" C칸 = 크기별 C칸 평균.
 - 사진은 브라우저에서 1600px·흑백·JPEG 60%로 줄여 저장.
+- "학습"(`lib/receipt-learning.ts`): 확정 때 AI 값과 다른 곳을 `receipt_corrections` 에 저장. AI 읽기 때 거래처별 지난 확정
+  품목명(단위)과 품목명·단위 고친 예를 프롬프트에 붙임. 장부 품목 추천은 지난 선택(품목명 → ledger_item)이 먼저.
+  관리자 전표 목록에 "AI가 자주 틀리는 것" 표.
 
 ## 배포
 - Vercel 프로젝트 store-ops (팀 jdo3), 서울 리전(icn1). 접속 주소 https://store-ops-tau.vercel.app

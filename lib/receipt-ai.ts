@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z } from 'zod'
 import { notifyAdmins } from '@/lib/push'
+import { learningHints } from '@/lib/receipt-learning'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 // 비용을 줄이려고 Haiku 사용 (사장님 결정 2026-10-23). 정확도가 아쉬우면 claude-sonnet-5-5 / claude-opus-5-5 로.
@@ -29,7 +30,7 @@ export const ReceiptProposalSchema = z.object({
 })
 export type ReceiptProposal = z.infer<typeof ReceiptProposalSchema>
 
-function prompt(photoCount: number) {
+function prompt(photoCount: number, hints: string) {
   return `이 사진 ${photoCount}장은 한식당이 거래처(식자재 업체 등)에서 받은 전표(거래명세표 또는 영수증)입니다.
 여러 장이면 한 전표의 이어지는 페이지일 수 있으니, 품목을 한 번씩만 모아 주세요.
 
@@ -38,7 +39,7 @@ function prompt(photoCount: number) {
 - 금액은 원 단위 숫자만 (쉼표·"원" 없이).
 - 날짜는 YYYY-MM-DD 형식.
 - 공급가액·부가세·합계 줄은 items에 넣지 말고, 전표의 최종 합계만 total_amount에 넣어 주세요.
-이 값은 사장님이 사진과 대조해 확인한 뒤에만 기록됩니다.`
+이 값은 사람이 사진과 대조해 확인한 뒤에만 기록됩니다.${hints ? `\n\n${hints}` : ''}`
 }
 
 const MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const
@@ -102,12 +103,14 @@ export async function readReceipt(receiptId: number) {
       }),
     )
 
+    // 지난 확정 품목·고친 예 (이걸로 같은 이름·단위로 읽게 함)
+    const hints = await learningHints().catch(() => '')
     const client = new Anthropic()
     const response = await client.beta.messages.parse({
       model: MODEL,
       max_tokens: 16000,
       output_config: { effort: 'medium', format: betaZodOutputFormat(ReceiptProposalSchema) },
-      messages: [{ role: 'user', content: [...images, { type: 'text', text: prompt(images.length) }] }],
+      messages: [{ role: 'user', content: [...images, { type: 'text', text: prompt(images.length, hints) }] }],
     })
 
     if (response.stop_reason === 'refusal') {

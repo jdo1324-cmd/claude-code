@@ -6,6 +6,7 @@ import { after } from 'next/server'
 import { getCurrentProfile, requireAdmin } from '@/lib/auth'
 import { getSheetSettings, sendReceiptToSheet, type ReceiptReply } from '@/lib/google-sheet'
 import { readReceipt } from '@/lib/receipt-ai'
+import { recordCorrections } from '@/lib/receipt-learning'
 import { createClient } from '@/lib/supabase/server'
 
 // 전표 화면 공용 동작. 사장/관리자 화면(/admin/receipts/…)과 올린 사람 화면(/receipts/…)에서 같이 씀.
@@ -58,6 +59,10 @@ export async function confirmReceipt(formData: FormData) {
     p_items: items,
   })
   if (error) back(path, 'error', error.message)
+  // AI가 읽은 값과 다른 곳을 기록 → 다음 AI 읽기·장부 품목 추천에 씀
+  await recordCorrections(id, items as Parameters<typeof recordCorrections>[1]).catch((err) =>
+    console.error('recordCorrections failed', err),
+  )
 
   let message = '확정했습니다.'
   if ((await getSheetSettings()).webhook_url) message += '\n' + ledgerMessage(await sendReceiptToSheet(id, me.id))

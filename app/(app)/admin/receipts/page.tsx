@@ -10,6 +10,16 @@ import { sendUnsentToSheet } from './actions'
 // 안 적은 전표를 한꺼번에 장부에 적을 때 시간이 걸릴 수 있음
 export const maxDuration = 300
 
+const FIX_LABEL = {
+  name: '품목명',
+  unit: '단위',
+  quantity: '수량',
+  unit_price: '단가',
+  line_total: '금액',
+  added: '빠뜨린 줄',
+  removed: '없는 줄을 읽음',
+} as const
+
 const RECEIPT_LIST_SELECT =
   'id, photo_paths, note, created_by, created_at, status, proposal, ai_error, vendor, receipt_date, total_amount, close_reason'
 
@@ -46,6 +56,32 @@ export default async function ReceiptListPage({
       supabase.from('receipt_sheet_exports').select('receipt_id'),
     ])
   const sentIds = new Set((exportData ?? []).map((e) => e.receipt_id as number))
+
+  // AI가 읽은 값을 사람이 고친 기록 (최근 60일) → 같은 고침끼리 묶어 많은 순
+  const { data: fixData } = await supabase
+    .from('receipt_corrections')
+    .select('field, ai_value, confirmed_value, item_name, receipt_id')
+    .gte('created_at', since)
+  const fixRows = (fixData ?? []) as {
+    field: keyof typeof FIX_LABEL
+    ai_value: string | null
+    confirmed_value: string | null
+    item_name: string | null
+    receipt_id: number
+  }[]
+  const fixGroups = [
+    ...fixRows
+      .reduce((m, f) => {
+        const key = `${f.field}|${f.item_name}|${f.ai_value}|${f.confirmed_value}`
+        const g = m.get(key) ?? { ...f, count: 0 }
+        g.count++
+        return m.set(key, g)
+      }, new Map<string, (typeof fixRows)[number] & { count: number }>())
+      .values(),
+  ]
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 20)
+  const fixedReceipts = new Set(fixRows.map((f) => f.receipt_id)).size
   const pending = (pendingData ?? []) as unknown as Receipt[]
   const done = (doneData ?? []) as unknown as Receipt[]
   const changes = ((priceData ?? []) as PriceRow[]).filter((p) => Number(p.prev_unit_price) !== Number(p.unit_price))
@@ -117,6 +153,41 @@ export default async function ReceiptListPage({
             {pending.length === 0 && (
               <tr>
                 <td colSpan={9}>확인할 전표가 없습니다.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <h2>AI가 자주 틀리는 것 (최근 60일)</h2>
+      <p className="small muted">
+        직원이 확정하면서 AI가 읽은 값을 고친 곳입니다. 고친 품목명·단위는 다음 전표를 읽을 때 AI에게 알려 주고, 장부
+        품목도 지난번 선택대로 먼저 골라 둡니다. 고친 전표 {fixedReceipts}건.
+      </p>
+      <div className="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>무엇을</th>
+              <th>품목</th>
+              <th>AI가 읽은 값</th>
+              <th>고친 값</th>
+              <th className="num">횟수</th>
+            </tr>
+          </thead>
+          <tbody>
+            {fixGroups.map((f) => (
+              <tr key={`${f.field}|${f.item_name}|${f.ai_value}|${f.confirmed_value}`}>
+                <td>{FIX_LABEL[f.field]}</td>
+                <td>{f.item_name ?? '-'}</td>
+                <td>{f.ai_value ?? '-'}</td>
+                <td>{f.confirmed_value ?? '-'}</td>
+                <td className="num">{f.count}번</td>
+              </tr>
+            ))}
+            {fixGroups.length === 0 && (
+              <tr>
+                <td colSpan={5}>아직 고친 기록이 없습니다.</td>
               </tr>
             )}
           </tbody>

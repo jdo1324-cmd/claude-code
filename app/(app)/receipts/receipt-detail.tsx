@@ -5,6 +5,7 @@ import { RealtimeRefresh } from '@/app/components/realtime-refresh'
 import type { Profile } from '@/lib/auth'
 import { formatTime } from '@/lib/format'
 import { RECEIPT_BUCKET } from '@/lib/receipt-ai'
+import { ledgerHistory } from '@/lib/receipt-learning'
 import { RECEIPT_STATUS_LABEL, priceChange, won, type PriceRow, type Receipt } from '@/lib/receipts'
 import { createClient } from '@/lib/supabase/server'
 import { ConfirmForm, type LedgerItem } from './confirm-form'
@@ -111,6 +112,7 @@ export async function ReceiptDetail({
                 id={id}
                 proposal={receipt.proposal}
                 ledgerItems={(ledgerData ?? []) as LedgerItem[]}
+                ledgerHistory={open ? await ledgerHistory() : {}}
                 back={back}
               />
               <div style={{ display: 'flex', gap: 16, marginTop: 12, flexWrap: 'wrap' }}>

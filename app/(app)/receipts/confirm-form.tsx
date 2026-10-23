@@ -5,7 +5,16 @@ import { useFormStatus } from 'react-dom'
 import type { ReceiptProposal } from '@/lib/receipt-ai'
 import { confirmReceipt } from './receipt-actions'
 
-type Row = { name: string; quantity: string; unit: string; unit_price: string; line_total: string; ledger: string }
+// ai: AI가 읽은 몇 번째 줄인지 (직접 추가한 줄은 null) → 확정할 때 AI 값과 비교해 고친 곳을 기록
+type Row = {
+  name: string
+  quantity: string
+  unit: string
+  unit_price: string
+  line_total: string
+  ledger: string
+  ai: number | null
+}
 export type LedgerItem = { section: string; name: string }
 
 // 장부 품목 값: "구역|품목" (구역이 달라도 이름이 같은 품목이 있어서)
@@ -18,7 +27,15 @@ const core = (s: string) =>
 
 // 전표 품목명으로 장부 품목을 짐작: 장부 이름이 전표 이름(또는 그 낱말)과 같거나 그 안에 들어 있는 것 중 가장 긴 것.
 // 같으면 거래처와 구역이 맞는 쪽 (예: 프레시원 전표의 짜사이 → 프레시원 짜사이)
-export function guessLedger(itemName: string, vendor: string, items: LedgerItem[]) {
+// history: 예전에 같은 품목명으로 확정할 때 고른 장부 품목 (있으면 그것부터)
+export function guessLedger(
+  itemName: string,
+  vendor: string,
+  items: LedgerItem[],
+  history: Record<string, string> = {},
+) {
+  const past = history[itemName.replace(/\s+/g, '').toLowerCase()]
+  if (past && items.some((it) => ledgerKey(it) === past)) return past
   const name = core(itemName)
   const words = itemName
     .split(/[\s/]+/)
@@ -72,11 +89,13 @@ export function ConfirmForm({
   id,
   proposal,
   ledgerItems,
+  ledgerHistory,
   back,
 }: {
   id: number
   proposal: ReceiptProposal | null
   ledgerItems: LedgerItem[]
+  ledgerHistory: Record<string, string>
   back: string
 }) {
   const [vendor, setVendor] = useState(proposal?.vendor ?? '')
@@ -86,15 +105,16 @@ export function ConfirmForm({
   const [total, setTotal] = useState(str(proposal?.total_amount))
   const [rows, setRows] = useState<Row[]>(
     proposal?.items.length
-      ? proposal.items.map((i) => ({
+      ? proposal.items.map((i, n) => ({
+          ai: n,
           name: i.name,
           quantity: str(i.quantity),
           unit: i.unit ?? '',
           unit_price: str(i.unit_price),
           line_total: str(i.line_total),
-          ledger: guessLedger(i.name, proposal.vendor ?? '', ledgerItems),
+          ledger: guessLedger(i.name, proposal.vendor ?? '', ledgerItems, ledgerHistory),
         }))
-      : [{ name: '', quantity: '', unit: '', unit_price: '', line_total: '', ledger: '' }],
+      : [{ name: '', quantity: '', unit: '', unit_price: '', line_total: '', ledger: '', ai: null }],
   )
 
   const update = (i: number, key: keyof Row, value: string) =>
@@ -122,6 +142,7 @@ export function ConfirmForm({
     unit_price: num(r.unit_price),
     line_total: num(r.line_total),
     ledger_item: r.ledger || null,
+    ai_line: r.ai,
   }))
 
   return (
@@ -212,7 +233,10 @@ export function ConfirmForm({
         <button
           type="button"
           onClick={() =>
-            setRows([...rows, { name: '', quantity: '', unit: '', unit_price: '', line_total: '', ledger: '' }])
+            setRows([
+              ...rows,
+              { name: '', quantity: '', unit: '', unit_price: '', line_total: '', ledger: '', ai: null },
+            ])
           }
         >
           + 품목 추가
