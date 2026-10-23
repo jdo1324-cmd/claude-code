@@ -6,6 +6,15 @@ import { requireOwner } from '@/lib/auth'
 import { isValidWebhookUrl, refreshLedgerItems, testConnection } from '@/lib/google-sheet'
 import { createAdminClient } from '@/lib/supabase/admin'
 
+function connectionText(reply: Awaited<ReturnType<typeof testConnection>>) {
+  return [
+    `· 인건비·일용직 → 손익계산서: "${reply.sheetName}" ✅`,
+    reply.ledgerName
+      ? `· 전표 → 매장 매출 매입 장부: "${reply.ledgerName}" ✅`
+      : '· 전표 → 매장 매출 매입 장부: ⚠️ 열지 못함 (Apps Script에서 checkLedgerAccess 를 ▶ 실행해 권한을 허용하고, 새 버전으로 배포해 주세요)',
+  ].join('\n')
+}
+
 function back(key: 'ok' | 'error', message: string): never {
   revalidatePath('/admin/google-sheet')
   redirect('/admin/google-sheet?' + key + '=' + encodeURIComponent(message))
@@ -29,14 +38,14 @@ export async function saveWebhookUrl(formData: FormData) {
 
   const reply = await testConnection()
   if (!reply.ok) back('error', '주소는 저장했지만 연결 확인에 실패했습니다: ' + (reply.error ?? '알 수 없는 오류'))
-  back('ok', `연결되었습니다! (시트 "${reply.sheetName}")`)
+  back('ok', '연결되었습니다!\n' + connectionText(reply))
 }
 
 export async function testSheet() {
   await requireOwner()
   const reply = await testConnection()
   if (!reply.ok) back('error', reply.error ?? '연결 확인에 실패했습니다.')
-  back('ok', `연결 정상입니다. (시트 "${reply.sheetName}")`)
+  back(reply.ledgerName ? 'ok' : 'error', '연결 확인 결과\n' + connectionText(reply))
 }
 
 // 비밀값이 새어 나간 것 같을 때: 새 값으로 바꾸면 예전 코드로는 받을 수 없음

@@ -23,12 +23,27 @@ export default async function GoogleSheetPage({
         <h1>구글 시트 연결</h1>
         <span className={connected ? 'badge badge-ok' : 'badge'}>{connected ? '연결됨' : '연결 안 됨'}</span>
       </div>
-      <p className="small muted">
-        손익계산서에 코드 하나를 붙여 넣으면 세 가지가 시트로 갑니다. ① 확정한 전표 →{' '}
-        <strong>매장 매출 매입 장부</strong> 파일의 &quot;YY년M월&quot; 탭(품목 줄 × 전표 날짜 칸에 금액을 더함)과
-        &quot;평균단가&quot; 탭 (사진은 보내지 않음). ② [월별 근무시간]의 출퇴근 기록 → 손익계산서 &quot;N월
-        인건비&quot; 탭의 날짜 칸. ③ [일용직] 기록 → 같은 탭의 일용직 구역.
-      </p>
+      {/* 어떤 기록이 어느 파일로 가는지 */}
+      <div className="grid">
+        <div className="card">
+          <div className="stat-label">📊 손익계산서</div>
+          <p style={{ margin: '6px 0 0' }}>
+            <strong>인건비</strong> — [월별 근무시간] 출퇴근 기록, [일용직] 기록·주민번호
+          </p>
+          <p className="small muted" style={{ margin: '4px 0 0' }}>
+            &quot;N월 인건비&quot; 탭. 아래 코드를 붙여 넣는 파일이 이 손익계산서입니다.
+          </p>
+        </div>
+        <div className="card">
+          <div className="stat-label">🧾 매장 매출 매입 장부</div>
+          <p style={{ margin: '6px 0 0' }}>
+            <strong>전표</strong> — 확정한 전표의 품목 금액, 평균단가
+          </p>
+          <p className="small muted" style={{ margin: '4px 0 0' }}>
+            &quot;YY년M월&quot; 탭의 품목 줄 × 전표 날짜 칸, &quot;평균단가&quot; 탭. 사진은 보내지 않습니다.
+          </p>
+        </div>
+      </div>
       {error && <p className="alert alert-error">{error}</p>}
       {ok && <p className="alert alert-ok">{ok}</p>}
 

@@ -173,7 +173,7 @@ export default async function HoursPage({
             <form action={sendHoursToSheet}>
               <input type="hidden" name="month" value={month} />
               <p className="small muted">
-                구글 시트 &quot;{monthNo}월 인건비&quot; 탭의{' '}
+                <strong>손익계산서</strong> &quot;{monthNo}월 인건비&quot; 탭의{' '}
                 <strong>
                   날짜 칸({range.fromDay}일~{range.toDay}일)
                 </strong>
@@ -192,7 +192,7 @@ export default async function HoursPage({
                 <ConfirmButton
                   message={`${monthNo}월 출퇴근 기록을 손익계산서 "${monthNo}월 인건비" 탭으로 보낼까요?\n${range.fromDay}일~${range.toDay}일 날짜 칸이 앱 기록으로 바뀝니다.`}
                 >
-                  📤 구글 시트로 전송
+                  📤 손익계산서로 전송
                 </ConfirmButton>
               </div>
             </form>

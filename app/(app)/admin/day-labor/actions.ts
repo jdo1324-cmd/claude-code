@@ -22,9 +22,9 @@ async function syncSheet(month: string, userId: string) {
   if (!(await getSheetSettings()).webhook_url) return ''
   const reply = await sendDayLaborToSheet(month, userId)
   if (!reply.ok)
-    return `\n⚠️ 구글 시트에는 반영하지 못했습니다: ${reply.error} — 아래 [구글 시트로 전송]으로 다시 보내 주세요.`
+    return `\n⚠️ 손익계산서에는 반영하지 못했습니다: ${reply.error} — 아래 [손익계산서로 다시 보내기]를 눌러 주세요.`
   if (reply.unmatched?.length) return `\n⚠️ 시트에 넣지 못한 사람: ${reply.unmatched.join(', ')}`
-  return ' 구글 시트에도 반영했습니다.'
+  return ' 손익계산서에도 반영했습니다.'
 }
 
 // 일용직 근무 기록 추가
@@ -48,7 +48,7 @@ export async function addDayLabor(formData: FormData) {
   if (rrnDigits) {
     if (!/^\d{13}$/.test(rrnDigits)) back(month, 'error', '주민번호는 숫자 13자리로 적어 주세요. (예: 900101-1234567)')
     const reply = await sendDayLaborRrnToSheet(month, name, `${rrnDigits.slice(0, 6)}-${rrnDigits.slice(6)}`)
-    if (!reply.ok) back(month, 'error', '주민번호를 구글 시트에 적지 못해 기록도 저장하지 않았습니다: ' + reply.error)
+    if (!reply.ok) back(month, 'error', '주민번호를 손익계산서에 적지 못해 기록도 저장하지 않았습니다: ' + reply.error)
     rrnNote = ` 주민번호는 "${reply.tab}" 탭에 적었습니다(앱에는 저장 안 함).`
   }
 
@@ -85,7 +85,7 @@ export async function sendDayLaborSheet(formData: FormData) {
   const month = String(formData.get('month') ?? '')
   if (!isMonth(month)) back('', 'error', '달을 골라 주세요.')
   const reply = await sendDayLaborToSheet(month, me.id)
-  if (!reply.ok) back(month, 'error', reply.error ?? '구글 시트로 보내지 못했습니다.')
+  if (!reply.ok) back(month, 'error', reply.error ?? '손익계산서로 보내지 못했습니다.')
   const parts = [
     `"${reply.tab}" 탭 일용직 구역에 ${reply.written?.length ?? 0}명의 기록을 넣었습니다.`,
     reply.created && '탭이 없어서 "X월 인건비"를 복사해 새로 만들었습니다.',

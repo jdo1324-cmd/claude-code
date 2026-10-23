@@ -24,7 +24,7 @@ export async function getSheetSettings(): Promise<SheetSettings> {
   return data as SheetSettings
 }
 
-type ScriptReply = { ok: boolean; error?: string; sheetName?: string; url?: string }
+type ScriptReply = { ok: boolean; error?: string; sheetName?: string; url?: string; ledgerName?: string | null }
 
 async function callScript(settings: SheetSettings, payload: Record<string, unknown>): Promise<ScriptReply> {
   if (!settings.webhook_url || !isValidWebhookUrl(settings.webhook_url)) {
@@ -56,8 +56,10 @@ async function callScript(settings: SheetSettings, payload: Record<string, unkno
   }
 }
 
+// 손익계산서(코드를 붙여 넣은 파일)와 매장 매출 매입 장부를 둘 다 열어 봄
 export async function testConnection() {
-  return callScript(await getSheetSettings(), { type: 'ping' })
+  const settings = await getSheetSettings()
+  return callScript(settings, { type: 'ping', ledgerId: settings.ledger_file_id })
 }
 
 export type ReceiptReply = ScriptReply & {
@@ -325,7 +327,11 @@ function doPost(e) {
   const body = JSON.parse(e.postData.contents);
   if (body.secret !== SECRET) return reply({ ok: false, error: '비밀값이 맞지 않습니다. 앱의 [구글 시트 연결] 화면에서 코드를 다시 복사해 붙여 넣으세요.' });
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (body.type === 'ping') return reply({ ok: true, sheetName: ss.getName(), url: ss.getUrl() });
+  if (body.type === 'ping') {
+    let ledgerName = null;
+    try { ledgerName = SpreadsheetApp.openById(body.ledgerId).getName(); } catch (err) {}
+    return reply({ ok: true, sheetName: ss.getName(), url: ss.getUrl(), ledgerName: ledgerName });
+  }
   if (body.type === 'labor') return reply(writeLabor(ss, body));
   if (body.type === 'day_labor') return reply(writeDayLabor(ss, body));
   if (body.type === 'day_labor_rrn') return reply(writeDayLaborRrn(ss, body));

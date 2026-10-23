@@ -257,7 +257,7 @@ export default async function DayLaborPage({
 
       <section>
         <div className="row" style={{ justifyContent: 'space-between' }}>
-          <h2 style={{ margin: 0 }}>구글 시트로 전송</h2>
+          <h2 style={{ margin: 0 }}>손익계산서로 전송</h2>
           {lastSent && <span className="badge badge-ok">마지막 전송 {lastSent.sent_at.slice(0, 10)}</span>}
         </div>
         <p className="small muted">
@@ -270,7 +270,7 @@ export default async function DayLaborPage({
           <form action={sendDayLaborSheet}>
             <input type="hidden" name="month" value={month} />
             <ConfirmButton message={`${m}월 일용직 기록 ${valid.length}건을 손익계산서로 보낼까요?`}>
-              📤 {m}월 기록 구글 시트로 다시 보내기
+              📤 {m}월 기록 손익계산서로 다시 보내기
             </ConfirmButton>
           </form>
         ) : (

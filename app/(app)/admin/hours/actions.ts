@@ -22,7 +22,7 @@ export async function sendHoursToSheet(formData: FormData) {
     back('error', '조퇴 기준 시간은 1~23 사이 숫자로 적어 주세요.')
 
   const reply = await sendLaborToSheet(month, earlyLeave, me.id, todayKST())
-  if (!reply.ok) back('error', reply.error ?? '구글 시트로 보내지 못했습니다.')
+  if (!reply.ok) back('error', reply.error ?? '손익계산서로 보내지 못했습니다.')
 
   const parts = [
     `"${reply.tab}" 탭에 ${reply.written?.length ?? 0}명의 출퇴근 기록을 넣었습니다.`,
