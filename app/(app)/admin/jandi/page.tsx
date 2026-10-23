@@ -100,7 +100,7 @@ export default async function JandiPage({ searchParams }: { searchParams: Promis
                           name={`email_${p.id}`}
                           type="email"
                           defaultValue={r?.email ?? p.email}
-                          style={{ width: '100%' }}
+                          style={{ width: '100%', minWidth: 200 }}
                         />
                       </td>
                       <td>
