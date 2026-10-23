@@ -6,7 +6,7 @@ import type { Profile } from '@/lib/auth'
 import { formatTime } from '@/lib/format'
 import { RECEIPT_BUCKET } from '@/lib/receipt-ai'
 import { ledgerHistory } from '@/lib/receipt-learning'
-import { RECEIPT_STATUS_LABEL, priceChange, won, type PriceRow, type Receipt } from '@/lib/receipts'
+import { RECEIPT_STATUS_LABEL, priceChange, receiptName, won, type PriceRow, type Receipt } from '@/lib/receipts'
 import { createClient } from '@/lib/supabase/server'
 import { ConfirmForm, type LedgerItem } from './confirm-form'
 import { closeReceipt, retryReceipt, sendToSheet } from './receipt-actions'
@@ -69,7 +69,7 @@ export async function ReceiptDetail({
         <Link href={back}>◀ 전표 목록</Link>
       </p>
       <h1>
-        전표 #{id} — {RECEIPT_STATUS_LABEL[receipt.status]}
+        전표 {receiptName(receipt)} — {RECEIPT_STATUS_LABEL[receipt.status]}
       </h1>
       <p>
         {names[receipt.created_by] ?? '?'} · {receipt.created_at.slice(0, 10)} {formatTime(receipt.created_at)} 올림

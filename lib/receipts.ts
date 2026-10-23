@@ -2,6 +2,7 @@ import type { ReceiptProposal } from '@/lib/receipt-ai'
 
 export type Receipt = {
   id: number
+  label: string | null
   photo_paths: string[]
   note: string | null
   created_by: string
@@ -44,6 +45,11 @@ export const RECEIPT_STATUS_LABEL = {
   rejected: '반려',
   void: '무효',
 } as const
+
+// 화면에 보이는 전표 이름: "#10월23일_1" (올린 날 + 그날 몇 번째). 이름이 없는 옛 전표는 번호로
+export function receiptName(r: { id: number; label?: string | null }) {
+  return `#${r.label ?? r.id}`
+}
 
 export function won(n: number | null | undefined) {
   return n == null ? '-' : `${Math.round(Number(n)).toLocaleString('ko-KR')}원`

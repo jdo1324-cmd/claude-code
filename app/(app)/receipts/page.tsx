@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { getCurrentProfile } from '@/lib/auth'
 import { formatTime, todayKST } from '@/lib/format'
-import { RECEIPT_STATUS_LABEL, won, type Receipt } from '@/lib/receipts'
+import { RECEIPT_STATUS_LABEL, receiptName, won, type Receipt } from '@/lib/receipts'
 import { createClient } from '@/lib/supabase/server'
 import { ReceiptUpload } from './receipt-upload'
 
@@ -13,13 +13,13 @@ export default async function ReceiptsPage() {
   const supabase = await createClient()
   const { data } = await supabase
     .from('receipts')
-    .select('id, created_at, status, vendor, receipt_date, total_amount, proposal')
+    .select('id, label, created_at, status, vendor, receipt_date, total_amount, proposal')
     .eq('created_by', me.id)
     .order('created_at', { ascending: false })
     .limit(20)
   const mine = (data ?? []) as Pick<
     Receipt,
-    'id' | 'created_at' | 'status' | 'vendor' | 'receipt_date' | 'total_amount' | 'proposal'
+    'id' | 'label' | 'created_at' | 'status' | 'vendor' | 'receipt_date' | 'total_amount' | 'proposal'
   >[]
   const todo = mine.filter((r) => ['processing', 'proposed', 'failed'].includes(r.status))
 
@@ -54,7 +54,7 @@ export default async function ReceiptsPage() {
               {mine.map((r) => (
                 <tr key={r.id}>
                   <td>
-                    <Link href={`/receipts/${r.id}`}>#{r.id}</Link>
+                    <Link href={`/receipts/${r.id}`}>{receiptName(r)}</Link>
                   </td>
                   <td>
                     {r.created_at.slice(5, 10)} {formatTime(r.created_at)}

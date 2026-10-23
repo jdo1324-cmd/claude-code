@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { RealtimeRefresh } from '@/app/components/realtime-refresh'
 import { requireAdmin, type Profile } from '@/lib/auth'
 import { todayKST } from '@/lib/format'
-import { RECEIPT_STATUS_LABEL, priceChange, won, type PriceRow, type Receipt } from '@/lib/receipts'
+import { RECEIPT_STATUS_LABEL, priceChange, receiptName, won, type PriceRow, type Receipt } from '@/lib/receipts'
 import { createClient } from '@/lib/supabase/server'
 import { ConfirmButton } from '@/app/components/confirm-button'
 import { sendUnsentToSheet } from './actions'
@@ -22,7 +22,7 @@ const FIX_LABEL = {
 } as const
 
 const RECEIPT_LIST_SELECT =
-  'id, photo_paths, note, created_by, created_at, status, proposal, ai_error, vendor, receipt_date, total_amount, close_reason'
+  'id, label, photo_paths, note, created_by, created_at, status, proposal, ai_error, vendor, receipt_date, total_amount, close_reason'
 
 export default async function ReceiptListPage({
   searchParams,
@@ -93,7 +93,7 @@ export default async function ReceiptListPage({
   const row = (r: Receipt) => (
     <tr key={r.id}>
       <td>
-        <Link href={`/admin/receipts/${r.id}`}>#{r.id}</Link>
+        <Link href={`/admin/receipts/${r.id}`}>{receiptName(r)}</Link>
       </td>
       <td>{r.created_at.slice(0, 10)}</td>
       <td>{names[r.created_by] ?? '?'}</td>

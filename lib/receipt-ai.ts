@@ -4,6 +4,7 @@ import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod'
 import { z } from 'zod'
 import { notifyAdmins } from '@/lib/push'
 import { learningHints } from '@/lib/receipt-learning'
+import { receiptName } from '@/lib/receipts'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 // 비용을 줄이려고 Haiku 사용 (사장님 결정 2026-10-23). 정확도가 아쉬우면 claude-sonnet-5-5 / claude-opus-5-5 로.
@@ -69,7 +70,11 @@ function describeError(err: unknown) {
 // 전표 사진을 Claude로 읽어서 "제안"으로 저장. 응답 후 백그라운드(after)에서 실행.
 export async function readReceipt(receiptId: number) {
   const admin = createAdminClient()
-  const { data: receipt } = await admin.from('receipts').select('id, photo_paths, status').eq('id', receiptId).single()
+  const { data: receipt } = await admin
+    .from('receipts')
+    .select('id, label, photo_paths, status')
+    .eq('id', receiptId)
+    .single()
   if (!receipt || receipt.status !== 'processing') return
 
   const save = (values: Record<string, unknown>) =>
@@ -87,7 +92,7 @@ export async function readReceipt(receiptId: number) {
     await notifyAdmins({
       kind: 'receipt',
       title: '전표 확인 대기',
-      body: `전표 #${receiptId}를 직접 입력해 확정해 주세요 (AI 키 미설정).`,
+      body: `전표 ${receiptName(receipt)}를 직접 입력해 확정해 주세요 (AI 키 미설정).`,
       url: `/admin/receipts/${receiptId}`,
     })
     return
@@ -145,7 +150,7 @@ export async function readReceipt(receiptId: number) {
   await notifyAdmins({
     kind: 'receipt',
     title: '전표 확인 대기',
-    body: `전표 #${receiptId}를 사진과 대조해 확정해 주세요.`,
+    body: `전표 ${receiptName(receipt)}를 AI가 읽었습니다. 올린 직원이 사진과 대조해 확정합니다.`,
     url: `/admin/receipts/${receiptId}`,
   })
 }
