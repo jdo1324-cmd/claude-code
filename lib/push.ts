@@ -33,30 +33,39 @@ function subject() {
   return host ? `https://${host}` : 'mailto:admin@example.com'
 }
 
-async function send(subs: { id: number; endpoint: string; p256dh: string; auth: string }[], message: PushMessage) {
-  if (subs.length === 0) return 0
+export type SendResult = { id: number; ok: boolean; status: number | null; detail?: string }
+
+async function sendDetailed(
+  subs: { id: number; endpoint: string; p256dh: string; auth: string }[],
+  message: PushMessage,
+): Promise<SendResult[]> {
+  if (subs.length === 0) return []
   const vapid = await getVapid()
   webpush.setVapidDetails(subject(), vapid.publicKey, vapid.privateKey)
   const admin = createAdminClient()
-  let sent = 0
-  await Promise.all(
-    subs.map(async (s) => {
+  return Promise.all(
+    subs.map(async (s): Promise<SendResult> => {
       try {
-        await webpush.sendNotification(
+        const res = await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
           JSON.stringify({ title: message.title, body: message.body, url: message.url ?? '/admin/home' }),
-          { TTL: 60 * 60 * 12 },
+          { TTL: 60 * 60 * 12, urgency: 'high' },
         )
-        sent++
+        return { id: s.id, ok: true, status: res.statusCode }
       } catch (err) {
         // 알림을 끈 휴대폰(404/410)은 목록에서 정리
-        const status = (err as { statusCode?: number }).statusCode
+        const e = err as { statusCode?: number; body?: string; message?: string }
+        const status = e.statusCode ?? null
         if (status === 404 || status === 410) await admin.from('push_subscriptions').delete().eq('id', s.id)
         else console.error('push failed', status, err)
+        return { id: s.id, ok: false, status, detail: (e.body || e.message || '').slice(0, 200) }
       }
     }),
   )
-  return sent
+}
+
+async function send(subs: { id: number; endpoint: string; p256dh: string; auth: string }[], message: PushMessage) {
+  return (await sendDetailed(subs, message)).filter((r) => r.ok).length
 }
 
 // 사장/관리자(알림을 켠 사람)에게 보내기
@@ -68,7 +77,10 @@ export async function notifyAdmins(message: PushMessage) {
       .select('id, endpoint, p256dh, auth, profiles!inner(role, is_active)')
       .in('profiles.role', ['owner', 'manager'])
       .eq('profiles.is_active', true)
-    return await send((data ?? []) as unknown as { id: number; endpoint: string; p256dh: string; auth: string }[], message)
+    return await send(
+      (data ?? []) as unknown as { id: number; endpoint: string; p256dh: string; auth: string }[],
+      message,
+    )
   } catch (err) {
     console.error('notifyAdmins failed', err)
     return 0
@@ -79,4 +91,16 @@ export async function notifyUser(userId: string, message: PushMessage) {
   const admin = createAdminClient()
   const { data } = await admin.from('push_subscriptions').select('id, endpoint, p256dh, auth').eq('user_id', userId)
   return send(data ?? [], message)
+}
+
+// 시험 알림: 기기 하나에만 보내고 푸시 서버의 응답을 그대로 돌려줌
+export async function notifyEndpoint(userId: string, endpoint: string, message: PushMessage) {
+  const admin = createAdminClient()
+  const { data } = await admin
+    .from('push_subscriptions')
+    .select('id, endpoint, p256dh, auth')
+    .eq('user_id', userId)
+    .eq('endpoint', endpoint)
+  if (!data || data.length === 0) return null
+  return (await sendDetailed(data, message))[0]
 }
