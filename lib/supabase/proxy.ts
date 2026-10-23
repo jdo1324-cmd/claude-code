@@ -1,8 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// /api/cron 은 자체 비밀값으로 확인
-const PUBLIC_PATHS = ['/login', '/auth', '/forgot-password', '/api/cron']
+// /api/cron 은 자체 비밀값으로 확인, /api/push-ack 는 시험 번호로만 기록
+const PUBLIC_PATHS = ['/login', '/auth', '/forgot-password', '/api/cron', '/api/push-ack']
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request })

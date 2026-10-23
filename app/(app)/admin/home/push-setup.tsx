@@ -1,7 +1,13 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getPushPublicKey, removePushSubscription, savePushSubscription, sendTestPush } from './push-actions'
+import {
+  getPushPublicKey,
+  getPushTest,
+  removePushSubscription,
+  savePushSubscription,
+  sendTestPush,
+} from './push-actions'
 
 function urlBase64ToUint8Array(base64: string) {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
@@ -85,9 +91,37 @@ export function PushSetup() {
         setMessage('이 휴대폰의 알림 등록이 없습니다. [이 휴대폰으로 알림 받기]를 다시 눌러 주세요.')
         return
       }
+      // 서비스 워커를 최신으로 (휴대폰이 받았는지 알려 주는 기능 포함)
+      await reg?.update().catch(() => {})
       const result = await sendTestPush(sub.endpoint)
       setMessage(result.message)
       setShowHelp(true)
+      if (!result.ok || !result.testId) return
+      setMessage(result.message + ' 휴대폰이 받는지 기다리는 중…')
+      // 최대 20초 동안 휴대폰의 응답을 기다림
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const t = await getPushTest(result.testId)
+        if (t?.shown_at) {
+          setMessage(
+            '✅ 휴대폰이 알림을 받아서 화면에 띄웠습니다. 안 보였다면 휴대폰 알림 설정(소리·팝업·잠금 화면)을 확인해 주세요.',
+          )
+          return
+        }
+        if (t?.show_error) {
+          setMessage(`⚠️ 휴대폰이 알림을 받았지만 띄우지 못했습니다: ${t.show_error}`)
+          return
+        }
+        if (t?.received_at && i >= 4) {
+          setMessage(
+            '⚠️ 휴대폰이 알림을 받았지만 화면에 띄우지 못하고 있습니다. 브라우저/사이트 알림 설정을 확인해 주세요.',
+          )
+          return
+        }
+      }
+      setMessage(
+        '❌ 20초 동안 휴대폰에 알림이 도착하지 않았습니다. 브라우저가 잠들어 있어 못 받는 것입니다. 아래 "알림이 안 뜰 때"의 배터리 설정을 바꾸거나 크롬으로 등록해 주세요.',
+      )
     } finally {
       setBusy(false)
     }
@@ -141,24 +175,31 @@ export function PushSetup() {
       {state === 'unsupported' &&
         '이 브라우저는 알림을 지원하지 않습니다. 휴대폰의 크롬(안드로이드) 또는 홈 화면 앱(아이폰)으로 열어 주세요.'}
       {message && <div style={{ color: 'var(--success)', marginTop: 6 }}>{message}</div>}
-      {isWhale && (
-        <p className="alert alert-warn small">
-          지금 <strong>네이버 웨일</strong>로 열려 있습니다. 웨일은 안드로이드에서 알림이 오지 않는 경우가 많습니다.{' '}
-          <strong>크롬</strong>으로 이 주소를 열어 [이 휴대폰으로 알림 받기]를 다시 눌러 주세요.
-        </p>
-      )}
       {showHelp && (
         <details className="small" open>
-          <summary>알림이 안 뜰 때</summary>
+          <summary>알림이 안 뜰 때 ({isWhale ? '웨일' : '크롬'} 기준)</summary>
           <ol style={{ margin: '4px 0' }}>
             <li>
-              [바로 띄워 보기]도 안 뜨면: 휴대폰 설정 → 애플리케이션 → (크롬/웨일) → 알림 → 허용, 방해 금지 모드 해제
+              <strong>[바로 띄워 보기]도 안 뜨면</strong> → 휴대폰 설정 → 애플리케이션 → {isWhale ? '웨일' : '크롬'} →
+              알림 → 전체 허용. 그 안의 <strong>&quot;사이트&quot; / &quot;store-ops-tau.vercel.app&quot;</strong>{' '}
+              항목도 켜기.
+              {isWhale && ' 웨일 앱 → 설정 → 사이트 설정 → 알림에서 이 사이트가 "허용"인지도 확인.'}
             </li>
             <li>
-              [바로 띄워 보기]는 뜨는데 [시험 알림]만 안 뜨면: 브라우저가 알림을 못 받는 것입니다. 크롬으로 열어 다시
-              등록하세요.
+              <strong>&quot;도착하지 않았습니다&quot;가 나오면</strong> → 휴대폰이 {isWhale ? '웨일' : '크롬'}을 재워서
+              못 받는 것입니다. 설정 → 배터리(또는 애플리케이션 → {isWhale ? '웨일' : '크롬'} → 배터리) →{' '}
+              <strong>&quot;제한 없음&quot;</strong>. 삼성 휴대폰은 배터리 → 백그라운드 사용 제한 →{' '}
+              <strong>&quot;절전 예외 앱&quot;에 추가</strong>, &quot;사용하지 않는 앱 절전&quot;에서 빼기. 데이터 →
+              백그라운드 데이터 허용.
             </li>
-            <li>절전 모드/배터리 최적화에서 브라우저를 &quot;제한 없음&quot;으로 두면 더 잘 옵니다.</li>
+            <li>
+              {isWhale ? '웨일' : '크롬'}을 최신 버전으로 업데이트한 뒤 [끄기] → [이 휴대폰으로 알림 받기]로 다시 등록.
+            </li>
+            {isWhale && (
+              <li>
+                위를 다 해도 &quot;도착하지 않았습니다&quot;면 웨일이 알림을 못 받는 것이니 크롬으로 등록해 주세요.
+              </li>
+            )}
           </ol>
         </details>
       )}

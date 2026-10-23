@@ -26,7 +26,7 @@ export async function getVapidPublicKey() {
   return (await getVapid()).publicKey
 }
 
-export type PushMessage = { title: string; body: string; url?: string }
+export type PushMessage = { title: string; body: string; url?: string; testId?: string }
 
 function subject() {
   const host = process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -48,7 +48,12 @@ async function sendDetailed(
       try {
         const res = await webpush.sendNotification(
           { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          JSON.stringify({ title: message.title, body: message.body, url: message.url ?? '/admin/home' }),
+          JSON.stringify({
+            title: message.title,
+            body: message.body,
+            url: message.url ?? '/admin/home',
+            testId: message.testId,
+          }),
           { TTL: 60 * 60 * 12, urgency: 'high' },
         )
         return { id: s.id, ok: true, status: res.statusCode }
