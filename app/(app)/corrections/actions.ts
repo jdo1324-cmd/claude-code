@@ -51,6 +51,7 @@ export async function requestCorrection(formData: FormData) {
   const me = await getCurrentProfile()
   after(() =>
     notifyAdmins({
+      kind: 'correction',
       title: '정정 요청',
       body: `${me.full_name}: ${REQUEST_TYPE_LABEL[type as keyof typeof REQUEST_TYPE_LABEL] ?? type} — ${String(formData.get('reason') ?? '')}`,
       url: '/admin',

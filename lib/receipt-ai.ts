@@ -61,11 +61,7 @@ function describeError(err: unknown) {
 // 전표 사진을 Claude로 읽어서 "제안"으로 저장. 응답 후 백그라운드(after)에서 실행.
 export async function readReceipt(receiptId: number) {
   const admin = createAdminClient()
-  const { data: receipt } = await admin
-    .from('receipts')
-    .select('id, photo_paths, status')
-    .eq('id', receiptId)
-    .single()
+  const { data: receipt } = await admin.from('receipts').select('id, photo_paths, status').eq('id', receiptId).single()
   if (!receipt || receipt.status !== 'processing') return
 
   const save = (values: Record<string, unknown>) =>
@@ -76,8 +72,16 @@ export async function readReceipt(receiptId: number) {
       .eq('status', 'processing')
 
   if (!process.env.ANTHROPIC_API_KEY) {
-    await save({ status: 'failed', ai_error: 'AI 키(ANTHROPIC_API_KEY)가 아직 설정되지 않았습니다. 직접 입력해서 확정할 수 있습니다.' })
-    await notifyAdmins({ title: '전표 확인 대기', body: `전표 #${receiptId}를 직접 입력해 확정해 주세요 (AI 키 미설정).`, url: `/admin/receipts/${receiptId}` })
+    await save({
+      status: 'failed',
+      ai_error: 'AI 키(ANTHROPIC_API_KEY)가 아직 설정되지 않았습니다. 직접 입력해서 확정할 수 있습니다.',
+    })
+    await notifyAdmins({
+      kind: 'receipt',
+      title: '전표 확인 대기',
+      body: `전표 #${receiptId}를 직접 입력해 확정해 주세요 (AI 키 미설정).`,
+      url: `/admin/receipts/${receiptId}`,
+    })
     return
   }
 
@@ -109,11 +113,19 @@ export async function readReceipt(receiptId: number) {
     })
 
     if (response.stop_reason === 'refusal') {
-      await save({ status: 'failed', ai_model: response.model, ai_error: 'AI가 이 사진을 읽지 않았습니다. 직접 입력해서 확정하세요.' })
+      await save({
+        status: 'failed',
+        ai_model: response.model,
+        ai_error: 'AI가 이 사진을 읽지 않았습니다. 직접 입력해서 확정하세요.',
+      })
       return
     }
     if (response.stop_reason === 'max_tokens' || !response.parsed_output) {
-      await save({ status: 'failed', ai_model: response.model, ai_error: 'AI 결과가 완전하지 않습니다. [다시 읽기]를 누르거나 직접 입력하세요.' })
+      await save({
+        status: 'failed',
+        ai_model: response.model,
+        ai_error: 'AI 결과가 완전하지 않습니다. [다시 읽기]를 누르거나 직접 입력하세요.',
+      })
       return
     }
 
@@ -123,5 +135,10 @@ export async function readReceipt(receiptId: number) {
   }
 
   // 결과와 상관없이 확인 대기 상태가 되었으니 알림
-  await notifyAdmins({ title: '전표 확인 대기', body: `전표 #${receiptId}를 사진과 대조해 확정해 주세요.`, url: `/admin/receipts/${receiptId}` })
+  await notifyAdmins({
+    kind: 'receipt',
+    title: '전표 확인 대기',
+    body: `전표 #${receiptId}를 사진과 대조해 확정해 주세요.`,
+    url: `/admin/receipts/${receiptId}`,
+  })
 }

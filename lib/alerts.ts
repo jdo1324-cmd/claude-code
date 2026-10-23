@@ -66,6 +66,7 @@ export async function findAlerts(supabase: Supabase, today: string, days = 7): P
           i.phase === phase &&
           i.is_required &&
           i.is_active &&
+          i.frequency === 'daily' && // 주간·월간 항목은 체크리스트 미완료 알림에서 따로 안내
           appliesOn(i, date) &&
           !done.some((e) => e.item_id === i.id && e.work_date === date),
       )
@@ -114,7 +115,7 @@ export async function findAlerts(supabase: Supabase, today: string, days = 7): P
     }
 
     // 4) 매출 보고서 미제출
-    if (!salesDates.has(date) && now >= kst(date, '22:00')) {
+    if (!salesDates.has(date) && (date < today || now >= kst(date, '22:00'))) {
       const closers = dayRecords.filter(
         (r) => r.clock_out === null || r.auto_clock_out || new Date(r.clock_out).getTime() >= kst(date, '20:30'),
       )

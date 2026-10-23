@@ -8,7 +8,7 @@ import {
   WEEKDAY_LABEL,
   WEEKDAY_ORDER,
   groupByCategory,
-  weekdaysLabel,
+  scheduleLabel,
   type ChecklistItem,
   type Phase,
 } from '@/lib/checklist'
@@ -59,6 +59,18 @@ function ItemFields({ item }: { item?: ChecklistItem }) {
         단위 (숫자 입력일 때)
         <input name="unit" defaultValue={item?.unit ?? ''} placeholder="예: ℃, 원, 개" />
       </label>
+      <label className="photo-mode-field check-label">
+        <input type="checkbox" name="before_after" defaultChecked={item?.photo_mode === 'before_after'} /> 비포·애프터
+        사진 2장 받기 <span className="small muted">(작업 전 사진 → 작업 후 사진)</span>
+      </label>
+      <label>
+        하는 주기
+        <select name="frequency" defaultValue={item?.frequency ?? 'daily'}>
+          <option value="daily">매일 (요일 지정 가능)</option>
+          <option value="weekly">주간 — 그 주(월~일) 안에 한 번</option>
+          <option value="monthly">월간 — 그 달 안에 한 번</option>
+        </select>
+      </label>
       <fieldset className="weekday-picker">
         <legend>하는 요일</legend>
         <div className="weekday-chips">
@@ -93,7 +105,12 @@ function ItemCard({ item, first, last }: { item: ChecklistItem; first: boolean; 
               {TYPE_LABEL[item.item_type]}
               {item.unit && ` (${item.unit})`}
             </span>
-            <span className={item.weekdays ? 'badge badge-warn' : 'badge'}>📅 {weekdaysLabel(item.weekdays)}</span>
+            {item.item_type === 'photo' && item.photo_mode === 'before_after' && (
+              <span className="badge">비포·애프터</span>
+            )}
+            <span className={item.weekdays || item.frequency !== 'daily' ? 'badge badge-warn' : 'badge'}>
+              📅 {scheduleLabel(item)}
+            </span>
           </div>
         </div>
         <div className="row" style={{ flexWrap: 'nowrap', gap: 4 }}>

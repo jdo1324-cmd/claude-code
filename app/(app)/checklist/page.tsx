@@ -10,6 +10,7 @@ import {
   groupByCategory,
   loadChecklist,
   progress,
+  scheduleLabel,
   type ChecklistEntry,
   type ChecklistItem,
 } from '@/lib/checklist'
@@ -27,13 +28,23 @@ export default async function ChecklistPage({
   const me = await getCurrentProfile()
   const date = todayKST()
   const supabase = await createClient()
-  const { items, entries, names, photoUrls } = await loadChecklist(supabase, date)
+  const { items, entries, beforePhotos, names, photoUrls } = await loadChecklist(supabase, date)
   const activeItems = items.filter((i) => i.is_active)
 
   function ItemRow({ item }: { item: ChecklistItem }) {
     const done = entries.find((e) => e.item_id === item.id && e.status === 'valid')
     const voided = entries.filter((e) => e.item_id === item.id && e.status === 'void')
     const canVoid = (e: ChecklistEntry) => isAdmin(me.role) || e.done_by === me.id
+    const before = beforePhotos.find((b) => b.item_id === item.id)
+    const twoPhotos = item.item_type === 'photo' && item.photo_mode === 'before_after'
+    const thumb = (path: string | null, label: string) =>
+      path && photoUrls[path] ? (
+        <a href={photoUrls[path]} target="_blank" rel="noreferrer" className="photo-thumb">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={photoUrls[path]} alt={`${item.title} ${label}`} />
+          <span>{label}</span>
+        </a>
+      ) : null
 
     return (
       <li id={`item-${item.id}`} className={done ? 'check-item is-done' : 'check-item'}>
@@ -48,23 +59,22 @@ export default async function ChecklistPage({
           <span className={item.is_required ? 'badge badge-danger' : 'badge'}>
             {item.is_required ? '필수' : '선택'}
           </span>
-          <span className="badge">{TYPE_LABEL[item.item_type]}</span>
+          <span className="badge">{twoPhotos ? '📷 비포·애프터' : TYPE_LABEL[item.item_type]}</span>
+          {item.frequency !== 'daily' && <span className="badge badge-warn">📅 {scheduleLabel(item, date)}</span>}
         </div>
 
         {done ? (
           <div className="check-body small muted">
             {item.item_type === 'number' && <strong>{formatValue(item, done)} </strong>}
-            {done.photo_path && photoUrls[done.photo_path] && (
-              <a href={photoUrls[done.photo_path]} target="_blank" rel="noreferrer">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={photoUrls[done.photo_path]}
-                  alt={item.title}
-                  style={{ height: 80, verticalAlign: 'middle', margin: '4px 0' }}
-                />
-              </a>
-            )}{' '}
-            — {names[done.done_by] ?? '?'} · {formatTime(done.done_at)}
+            {(done.photo_path || done.photo_before_path) && (
+              <div className="photo-row">
+                {thumb(done.photo_before_path, '비포')}
+                {thumb(done.photo_path, done.photo_before_path ? '애프터' : '사진')}
+              </div>
+            )}
+            — {names[done.done_by] ?? '?'} ·{' '}
+            {done.work_date !== date && `${Number(done.work_date.slice(5, 7))}/${Number(done.work_date.slice(8))} `}
+            {formatTime(done.done_at)}
             {done.note && ` · 메모: ${done.note}`}
             {canVoid(done) && (
               <details style={{ marginTop: 4 }}>
@@ -80,7 +90,27 @@ export default async function ChecklistPage({
           </div>
         ) : (
           <div className="check-body" style={{ marginTop: 6 }}>
-            {item.item_type === 'photo' ? (
+            {twoPhotos ? (
+              // 비포·애프터: ① 작업 전 사진 → ② 작업 후 사진 찍으면 완료
+              <div className="stack">
+                {before ? (
+                  <div className="photo-row">
+                    {thumb(before.photo_path, '비포')}
+                    <span className="small muted">
+                      ① 비포 완료 ({names[before.uploaded_by] ?? '?'})
+                      <PhotoUpload itemId={item.id} date={date} mode="before" label="↺ 비포 다시 찍기" />
+                    </span>
+                  </div>
+                ) : (
+                  <PhotoUpload itemId={item.id} date={date} mode="before" label="📷 ① 비포 사진 (작업 전)" />
+                )}
+                {before ? (
+                  <PhotoUpload itemId={item.id} date={date} mode="after" label="📷 ② 애프터 사진 찍고 완료" />
+                ) : (
+                  <span className="small faint">② 애프터 사진은 비포 사진을 올린 뒤에 찍을 수 있습니다.</span>
+                )}
+              </div>
+            ) : item.item_type === 'photo' ? (
               <PhotoUpload itemId={item.id} date={date} />
             ) : (
               <form action={completeItem} className="row">

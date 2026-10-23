@@ -46,6 +46,7 @@ export async function submitSalesReport(formData: FormData) {
   const diff = amounts.p_card + amounts.p_cash + amounts.p_other - amounts.p_total
   after(() =>
     notifyAdmins({
+      kind: 'sales_report',
       title: diff !== 0 ? '⚠️ 매출 보고서 (금액 차이)' : '매출 보고서 제출',
       body:
         `${me.full_name}: 매출 ${amounts.p_total.toLocaleString('ko-KR')}원` +

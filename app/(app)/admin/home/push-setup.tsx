@@ -204,7 +204,7 @@ export function PushSetup() {
         </details>
       )}
       <div className="small muted">
-        알림: 정정 요청 · 전표 확인 대기 · 매출 보고서 제출(금액 차이) · 매일 밤 22시 놓친 업무 점검
+        알림: 정정 요청 · 전표 확인 대기 · 매출 보고서 · 체크리스트 미완료 · 놓친 일 점검 (시각은 [알림 설정]에서)
       </div>
     </div>
   )

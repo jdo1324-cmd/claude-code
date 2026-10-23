@@ -3,11 +3,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 export async function getNfcToken(): Promise<string> {
-  const { data, error } = await createAdminClient()
-    .from('store_settings')
-    .select('nfc_token')
-    .eq('id', 1)
-    .single()
+  const { data, error } = await createAdminClient().from('store_settings').select('nfc_token').eq('id', 1).single()
   if (error || !data) throw new Error('매장 설정을 불러오지 못했습니다')
   return data.nfc_token as string
 }

@@ -27,8 +27,8 @@ export default async function JandiPage({ searchParams }: { searchParams: Promis
         <span className={webhookUrl ? 'badge badge-ok' : 'badge'}>{webhookUrl ? '연결됨' : '연결 안 됨'}</span>
       </div>
       <p className="small muted">
-        사장님·관리자에게 가는 알림(정정 요청, 전표 확인 대기, 매출 보고서, 20:30 체크리스트 미완료, 22:00 놓친 일
-        점검)을 잔디 1:1 메시지로도 보냅니다. 휴대폰 웹 알림과 함께 갑니다.
+        사장님·관리자에게 가는 알림(정정 요청, 전표 확인 대기, 매출 보고서, 체크리스트 미완료, 놓친 일 점검)을 잔디 1:1
+        메시지로도 보냅니다. 휴대폰 웹 알림과 함께 갑니다. 보내는 시각과 켜기/끄기는 [알림 설정]에서 정합니다.
       </p>
       {error && <p className="alert alert-error">{error}</p>}
       {ok && <p className="alert alert-ok">{ok}</p>}

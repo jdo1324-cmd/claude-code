@@ -3,7 +3,7 @@ import { ConfirmButton } from '@/app/components/confirm-button'
 import { RealtimeRefresh } from '@/app/components/realtime-refresh'
 import { voidEntry } from '@/app/(app)/checklist/actions'
 import { requireAdmin } from '@/lib/auth'
-import { PHASES, PHASE_LABEL, TYPE_LABEL, formatValue, loadChecklist, progress } from '@/lib/checklist'
+import { PHASES, PHASE_LABEL, TYPE_LABEL, formatValue, loadChecklist, progress, scheduleLabel } from '@/lib/checklist'
 import { formatTime, todayKST } from '@/lib/format'
 import { SALES_SELECT, formatWon, paymentDiff, type SalesReport } from '@/lib/sales'
 import { createClient } from '@/lib/supabase/server'
@@ -40,9 +40,11 @@ export default async function ChecklistHistoryPage({
   const itemById = new Map(items.map((i) => [i.id, i]))
 
   // 시간순 기록: 체크 + 취소
+  // (주간·월간 항목의 다른 날 기록은 빼고 이 날짜 기록만)
+  const dayEntries = entries.filter((e) => e.work_date === date)
   const timeline = [
-    ...entries.map((e) => ({ at: e.done_at, who: e.done_by, entry: e, kind: '완료' as const })),
-    ...entries
+    ...dayEntries.map((e) => ({ at: e.done_at, who: e.done_by, entry: e, kind: '완료' as const })),
+    ...dayEntries
       .filter((e) => e.status === 'void' && e.voided_at)
       .map((e) => ({ at: e.voided_at!, who: e.voided_by ?? '', entry: e, kind: '취소' as const })),
   ].sort((a, b) => a.at.localeCompare(b.at))
@@ -105,7 +107,13 @@ export default async function ChecklistHistoryPage({
                             {!item.is_active && ' (사용 중지됨)'}
                           </td>
                           <td>
-                            {item.is_required ? '필수' : '선택'} · {TYPE_LABEL[item.item_type]}
+                            {item.is_required ? '필수' : '선택'} ·{' '}
+                            {item.item_type === 'photo' && item.photo_mode === 'before_after'
+                              ? '📷 비포·애프터'
+                              : TYPE_LABEL[item.item_type]}
+                            {item.frequency !== 'daily' && (
+                              <div className="small muted">📅 {scheduleLabel(item, date)}</div>
+                            )}
                           </td>
                           <td>
                             {!done ? (
@@ -114,11 +122,31 @@ export default async function ChecklistHistoryPage({
                               </strong>
                             ) : item.item_type === 'number' ? (
                               formatValue(item, done)
-                            ) : item.item_type === 'photo' && done.photo_path && photoUrls[done.photo_path] ? (
-                              <a href={photoUrls[done.photo_path]} target="_blank" rel="noreferrer">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={photoUrls[done.photo_path]} alt={item.title} style={{ height: 60 }} />
-                              </a>
+                            ) : item.item_type === 'photo' && done.photo_path ? (
+                              <div className="photo-row">
+                                {[
+                                  [done.photo_before_path, '비포'],
+                                  [done.photo_path, done.photo_before_path ? '애프터' : '사진'],
+                                ].map(([path, label]) =>
+                                  path && photoUrls[path] ? (
+                                    <a
+                                      key={label}
+                                      href={photoUrls[path]}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="photo-thumb"
+                                    >
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={photoUrls[path]}
+                                        alt={`${item.title} ${label}`}
+                                        style={{ height: 60 }}
+                                      />
+                                      <span>{label}</span>
+                                    </a>
+                                  ) : null,
+                                )}
+                              </div>
                             ) : (
                               '완료'
                             )}

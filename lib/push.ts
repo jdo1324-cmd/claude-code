@@ -1,5 +1,6 @@
 import 'server-only'
 import webpush from 'web-push'
+import { isAlertEnabled, type AlertKind } from '@/lib/alert-settings'
 import { notifyAdminsJandi } from '@/lib/jandi'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -27,7 +28,7 @@ export async function getVapidPublicKey() {
   return (await getVapid()).publicKey
 }
 
-export type PushMessage = { title: string; body: string; url?: string; testId?: string }
+export type PushMessage = { title: string; body: string; url?: string; testId?: string; kind?: AlertKind }
 
 function subject() {
   const host = process.env.VERCEL_PROJECT_PRODUCTION_URL
@@ -76,6 +77,8 @@ async function send(subs: { id: number; endpoint: string; p256dh: string; auth: 
 
 // 사장/관리자에게 보내기: 휴대폰 웹 알림(켠 사람) + 잔디 1:1(연결했을 때) 둘 다
 export async function notifyAdmins(message: PushMessage) {
+  // 알림 설정에서 끈 종류는 보내지 않음
+  if (message.kind && !(await isAlertEnabled(message.kind))) return 0
   const [pushed] = await Promise.all([
     (async () => {
       try {
