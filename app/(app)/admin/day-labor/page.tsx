@@ -110,7 +110,7 @@ export default async function DayLaborPage({
           </label>
           <label>
             근무시간 (시간)
-            <input name="hours" required inputMode="decimal" placeholder="예: 10 또는 7.5" />
+            <input name="hours" required inputMode="decimal" defaultValue="10" placeholder="예: 10 또는 7.5" />
           </label>
           <label>
             일급 (원)
