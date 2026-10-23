@@ -1,11 +1,21 @@
 import Link from 'next/link'
 import { ConfirmButton } from '@/app/components/confirm-button'
-import { ATTENDANCE_SELECT, BREAK_OPTIONS, breakLabel, validBreak, type AttendanceRecord } from '@/lib/attendance'
+import {
+  ATTENDANCE_SELECT,
+  BREAK_OPTIONS,
+  breakLabel,
+  isMonth,
+  monthRange,
+  validBreak,
+  type AttendanceRecord,
+} from '@/lib/attendance'
 import { getCurrentProfile } from '@/lib/auth'
 import { CORRECTION_SELECT, REQUEST_STATUS_LABEL, REQUEST_TYPE_LABEL, type CorrectionRequest } from '@/lib/corrections'
 import { formatTime, toKstInput, todayKST } from '@/lib/format'
 import { createClient } from '@/lib/supabase/server'
 import { cancelCorrection, requestCorrection } from './actions'
+
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 
 function BreakSelect({ defaultValue }: { defaultValue?: number | null }) {
   return (
@@ -27,15 +37,45 @@ function formatProposal(req: CorrectionRequest) {
   return parts.join(' · ')
 }
 
+// 'YYYY-MM' 에서 n달 이동
+function shiftMonth(month: string, n: number) {
+  const [y, m] = month.split('-').map(Number)
+  const d = new Date(Date.UTC(y, m - 1 + n, 1))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
+}
+
+function kstDate(iso: string | null) {
+  return iso ? toKstInput(iso).slice(0, 10) : null
+}
+
 export default async function CorrectionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ attendance_id?: string; error?: string; ok?: string }>
+  searchParams: Promise<{ attendance_id?: string; add?: string; month?: string; error?: string; ok?: string }>
 }) {
-  const { attendance_id, error, ok } = await searchParams
+  const { attendance_id, add, month: monthParam, error, ok } = await searchParams
   const me = await getCurrentProfile()
   const isPartTime = me.employment_type === 'part_time'
+  const today = todayKST()
   const supabase = await createClient()
+  const addDate = add && /^\d{4}-\d{2}-\d{2}$/.test(add) && add <= today ? add : null
+
+  // 고른 기록이 있으면 그 기록의 달을 보여 줌
+  const { data: selectedData } = attendance_id
+    ? await supabase
+        .from('attendance')
+        .select(ATTENDANCE_SELECT)
+        .eq('id', Number(attendance_id))
+        .eq('user_id', me.id)
+        .eq('status', 'valid')
+        .maybeSingle()
+    : { data: null }
+  const selected = selectedData as unknown as AttendanceRecord | null
+
+  const month = isMonth(monthParam)
+    ? monthParam
+    : (selected?.work_date.slice(0, 7) ?? addDate?.slice(0, 7) ?? today.slice(0, 7))
+  const { start, end } = monthRange(month)
 
   const [{ data: recordData }, { data: requestData }] = await Promise.all([
     supabase
@@ -43,8 +83,9 @@ export default async function CorrectionsPage({
       .select(ATTENDANCE_SELECT)
       .eq('user_id', me.id)
       .eq('status', 'valid')
-      .order('clock_in', { ascending: false })
-      .limit(31),
+      .gte('work_date', start)
+      .lte('work_date', end)
+      .order('clock_in'),
     supabase
       .from('correction_requests')
       .select(CORRECTION_SELECT)
@@ -54,86 +95,204 @@ export default async function CorrectionsPage({
   ])
   const records = (recordData ?? []) as unknown as AttendanceRecord[]
   const requests = (requestData ?? []) as unknown as CorrectionRequest[]
-  const selected = records.find((r) => String(r.id) === attendance_id)
+
+  // 날짜별: 그날 기록, 대기 중인 요청이 있는지
+  const recordByDate = new Map(records.map((r) => [r.work_date, r]))
+  const pendingDates = new Set<string>()
+  for (const q of requests) {
+    if (q.status !== 'pending') continue
+    const rec = q.attendance_id ? records.find((r) => r.id === q.attendance_id) : undefined
+    const date = rec?.work_date ?? kstDate(q.proposed_clock_in)
+    if (date) pendingDates.add(date)
+  }
+
+  // 달력 칸: 첫 주 앞쪽 빈칸 + 1일 ~ 말일
+  const lastDay = Number(end.slice(8))
+  const firstWeekday = new Date(`${start}T00:00:00Z`).getUTCDay()
+  const cells: (string | null)[] = [
+    ...Array<null>(firstWeekday).fill(null),
+    ...Array.from({ length: lastDay }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`),
+  ]
+  const nextMonth = shiftMonth(month, 1)
+  const [y, m] = month.split('-').map(Number)
 
   return (
     <main>
       <h1>정정 요청</h1>
-      <p>
+      <p className="small muted">
         출퇴근 기록은 직접 고칠 수 없습니다. 정정 요청을 보내면 사장님이나 관리자가 확인 후 승인합니다. 승인되면 원래
         기록은 &quot;무효&quot;로 남고 새 기록이 추가됩니다.
       </p>
       {error && <p className="alert alert-error">{error}</p>}
       {ok && <p className="alert alert-ok">{ok}</p>}
 
-      {selected ? (
-        <section className="card">
-          <h2>
-            {selected.work_date} 기록 정정 (현재: 출근 {formatTime(selected.clock_in)} · 퇴근{' '}
-            {formatTime(selected.clock_out)}
-            {isPartTime && ` · 휴게 ${validBreak(selected) === null ? '미입력' : breakLabel(validBreak(selected)!)}`})
+      <section>
+        <div className="cal-head">
+          <Link
+            href={`/corrections?month=${shiftMonth(month, -1)}`}
+            className="btn btn-secondary icon-btn"
+            aria-label="이전 달"
+          >
+            ◀
+          </Link>
+          <h2 style={{ margin: 0 }}>
+            {y}년 {m}월
           </h2>
+          {nextMonth <= today.slice(0, 7) ? (
+            <Link href={`/corrections?month=${nextMonth}`} className="btn btn-secondary icon-btn" aria-label="다음 달">
+              ▶
+            </Link>
+          ) : (
+            <span className="icon-btn" />
+          )}
+        </div>
+        <p className="small muted" style={{ textAlign: 'center' }}>
+          정정할 날짜를 누르세요. 기록이 없는 날을 누르면 기록 추가를 요청할 수 있습니다.
+        </p>
+
+        <div className="cal" role="grid" aria-label={`${y}년 ${m}월 출퇴근 기록`}>
+          {WEEKDAYS.map((w, i) => (
+            <div key={w} className={`cal-weekday${i === 0 ? ' sun' : i === 6 ? ' sat' : ''}`}>
+              {w}
+            </div>
+          ))}
+          {cells.map((date, i) => {
+            if (!date) return <div key={`b${i}`} />
+            const day = Number(date.slice(8))
+            const rec = recordByDate.get(date)
+            const future = date > today
+            const isSelected = selected?.work_date === date || addDate === date
+            const cls = [
+              'cal-day',
+              rec ? 'has-record' : '',
+              pendingDates.has(date) ? 'pending' : '',
+              date === today ? 'today' : '',
+              isSelected ? 'selected' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')
+            const inner = (
+              <>
+                <span className="cal-num">{day}</span>
+                {rec && (
+                  <span className="cal-time">
+                    {formatTime(rec.clock_in)}
+                    <br />
+                    {rec.clock_out ? formatTime(rec.clock_out) : '근무 중'}
+                  </span>
+                )}
+                {pendingDates.has(date) && <span className="cal-flag">요청 중</span>}
+              </>
+            )
+            if (future) {
+              return (
+                <div key={date} className={cls + ' future'}>
+                  {inner}
+                </div>
+              )
+            }
+            const href = rec ? `/corrections?attendance_id=${rec.id}#form` : `/corrections?add=${date}#form`
+            return (
+              <Link key={date} href={href} className={cls}>
+                {inner}
+              </Link>
+            )
+          })}
+        </div>
+        <div className="cal-legend small muted">
+          <span>
+            <i className="dot has-record" /> 출근 기록
+          </span>
+          <span>
+            <i className="dot pending" /> 정정 요청 중
+          </span>
+          <span>
+            <i className="dot today" /> 오늘
+          </span>
+        </div>
+      </section>
+
+      {selected && (
+        <section id="form" className="card">
+          <h2>{selected.work_date} 기록 정정</h2>
+          <p className="alert alert-info">
+            지금 기록: 출근 <strong>{formatTime(selected.clock_in)}</strong> · 퇴근{' '}
+            <strong>{selected.clock_out ? formatTime(selected.clock_out) : '근무 중'}</strong>
+            {selected.auto_clock_out && ' (자동 퇴근 처리)'}
+            {isPartTime && ` · 휴게 ${validBreak(selected) === null ? '미입력' : breakLabel(validBreak(selected)!)}`}
+          </p>
 
           <h3>시간 수정 요청</h3>
-          <form action={requestCorrection}>
+          <form action={requestCorrection} className="item-fields">
             <input type="hidden" name="type" value="modify" />
             <input type="hidden" name="attendance_id" value={selected.id} />
-            <p>
-              출근 <input type="datetime-local" name="clock_in" required defaultValue={toKstInput(selected.clock_in)} />{' '}
-              퇴근 <input type="datetime-local" name="clock_out" defaultValue={toKstInput(selected.clock_out)} />
-            </p>
+            <label>
+              출근
+              <input type="datetime-local" name="clock_in" required defaultValue={toKstInput(selected.clock_in)} />
+            </label>
+            <label>
+              퇴근
+              <input type="datetime-local" name="clock_out" defaultValue={toKstInput(selected.clock_out)} />
+            </label>
             {isPartTime && (
-              <p>
-                휴게시간 <BreakSelect />
-              </p>
+              <label>
+                휴게시간
+                <BreakSelect />
+              </label>
             )}
-            <p>
-              사유 <input name="reason" required size={40} placeholder="예: 퇴근 태그를 깜빡함, 실제 퇴근 21:40" />
-            </p>
-            <ConfirmButton message="이 내용으로 정정 요청을 보낼까요?">요청 보내기</ConfirmButton>
+            <label>
+              사유
+              <input name="reason" required placeholder="예: 퇴근 태그를 깜빡함, 실제 퇴근 21:40" />
+            </label>
+            <div>
+              <ConfirmButton message="이 내용으로 정정 요청을 보낼까요?">요청 보내기</ConfirmButton>
+            </div>
           </form>
 
-          <h3>기록 무효 요청 (그날 실제로 근무하지 않은 경우)</h3>
-          <form action={requestCorrection}>
-            <input type="hidden" name="type" value="void" />
-            <input type="hidden" name="attendance_id" value={selected.id} />
-            사유 <input name="reason" required size={40} placeholder="예: 쉬는 날인데 태그를 잘못 찍음" />{' '}
-            <ConfirmButton message="이 기록을 무효로 해 달라고 요청할까요?">요청 보내기</ConfirmButton>
-          </form>
-          <p>
-            <Link href="/corrections">다른 기록 선택</Link>
-          </p>
+          <details style={{ marginTop: 16 }}>
+            <summary>이 날 근무하지 않았어요 (기록 무효 요청)</summary>
+            <form action={requestCorrection} className="item-fields">
+              <input type="hidden" name="type" value="void" />
+              <input type="hidden" name="attendance_id" value={selected.id} />
+              <label>
+                사유
+                <input name="reason" required placeholder="예: 쉬는 날인데 태그를 잘못 찍음" />
+              </label>
+              <div>
+                <ConfirmButton message="이 기록을 무효로 해 달라고 요청할까요?">무효 요청 보내기</ConfirmButton>
+              </div>
+            </form>
+          </details>
         </section>
-      ) : (
-        <section>
-          <h2>정정할 기록 선택</h2>
-          <ul>
-            {records.map((r) => (
-              <li key={r.id}>
-                {r.work_date} 출근 {formatTime(r.clock_in)} · 퇴근 {formatTime(r.clock_out)}
-                {r.auto_clock_out && ' (자동 퇴근 처리)'} —{' '}
-                <Link href={`/corrections?attendance_id=${r.id}`}>이 기록 정정</Link>
-              </li>
-            ))}
-            {records.length === 0 && <li>기록이 없습니다.</li>}
-          </ul>
+      )}
 
-          <h2>기록 추가 요청 (태그를 아예 못 찍은 날)</h2>
-          <form action={requestCorrection}>
+      {!selected && addDate && (
+        <section id="form" className="card">
+          <h2>{addDate} 기록 추가 요청</h2>
+          <p className="small muted">이 날 태그를 아예 못 찍었다면, 실제 출근·퇴근 시간을 적어 요청하세요.</p>
+          <form action={requestCorrection} className="item-fields">
             <input type="hidden" name="type" value="add" />
-            <p>
-              출근 <input type="datetime-local" name="clock_in" required defaultValue={`${todayKST()}T11:00`} /> 퇴근{' '}
-              <input type="datetime-local" name="clock_out" required />
-            </p>
+            <label>
+              출근
+              <input type="datetime-local" name="clock_in" required defaultValue={`${addDate}T11:00`} />
+            </label>
+            <label>
+              퇴근
+              <input type="datetime-local" name="clock_out" required defaultValue={`${addDate}T21:00`} />
+            </label>
             {isPartTime && (
-              <p>
-                휴게시간 <BreakSelect />
-              </p>
+              <label>
+                휴게시간
+                <BreakSelect />
+              </label>
             )}
-            <p>
-              사유 <input name="reason" required size={40} placeholder="예: 휴대폰을 두고 와서 태그를 못 찍음" />
-            </p>
-            <ConfirmButton message="이 내용으로 기록 추가를 요청할까요?">요청 보내기</ConfirmButton>
+            <label>
+              사유
+              <input name="reason" required placeholder="예: 휴대폰을 두고 와서 태그를 못 찍음" />
+            </label>
+            <div>
+              <ConfirmButton message="이 내용으로 기록 추가를 요청할까요?">요청 보내기</ConfirmButton>
+            </div>
           </form>
         </section>
       )}
@@ -159,8 +318,21 @@ export default async function CorrectionsPage({
                 <td>{formatProposal(q)}</td>
                 <td>{q.reason}</td>
                 <td>
-                  {REQUEST_STATUS_LABEL[q.status]}
-                  {q.review_note && ` (${q.review_note})`}
+                  <span
+                    className={
+                      q.status === 'pending'
+                        ? 'badge badge-warn'
+                        : q.status === 'approved'
+                          ? 'badge badge-ok'
+                          : q.status === 'rejected'
+                            ? 'badge badge-danger'
+                            : 'badge'
+                    }
+                    style={{ marginLeft: 0 }}
+                  >
+                    {REQUEST_STATUS_LABEL[q.status]}
+                  </span>
+                  {q.review_note && <div className="small muted">{q.review_note}</div>}
                 </td>
                 <td>
                   {q.status === 'pending' && (

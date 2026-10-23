@@ -28,7 +28,12 @@ export async function requestCorrection(formData: FormData) {
   const rawOut = String(formData.get('clock_out') ?? '')
   const clockIn = rawIn ? fromKstInput(rawIn) : null
   const clockOut = rawOut ? fromKstInput(rawOut) : null
-  const keep: Record<string, string> = attendanceId ? { attendance_id: String(attendanceId) } : {}
+  // 오류가 나면 같은 기록 / 같은 날짜 화면으로 돌아가게
+  const keep: Record<string, string> = attendanceId
+    ? { attendance_id: String(attendanceId) }
+    : /^\d{4}-\d{2}-\d{2}/.test(rawIn)
+      ? { add: rawIn.slice(0, 10) }
+      : {}
 
   if ((rawIn && !clockIn) || (rawOut && !clockOut)) back({ ...keep, error: '시간 형식이 잘못되었습니다.' })
 

@@ -1051,3 +1051,143 @@ th.num {
 .auto-clock-status p {
   margin: 0 0 12px;
 }
+
+/* ---------- 달력 (정정 요청) ---------- */
+.cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.cal-weekday {
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.cal-weekday.sun {
+  color: var(--danger);
+}
+
+.cal-weekday.sat {
+  color: var(--info);
+}
+
+.cal-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 64px;
+  padding: 6px 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--ink);
+  text-decoration: none;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+}
+
+a.cal-day:hover {
+  border-color: var(--primary);
+}
+
+.cal-num {
+  font-weight: 700;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.cal-time {
+  font-size: 10px;
+  line-height: 1.3;
+  text-align: center;
+  color: var(--success);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.cal-day.has-record {
+  background: var(--success-bg);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+}
+
+.cal-day.pending {
+  background: var(--warn-bg);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+
+.cal-day.pending .cal-time {
+  color: var(--warn);
+}
+
+.cal-flag {
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.cal-day.today {
+  box-shadow: inset 0 0 0 2px var(--primary);
+}
+
+.cal-day.selected {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-ink);
+}
+
+.cal-day.selected .cal-time,
+.cal-day.selected .cal-flag {
+  color: var(--primary-ink);
+}
+
+.cal-day.future {
+  opacity: 0.35;
+}
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin-top: 10px;
+  justify-content: center;
+}
+
+.cal-legend .dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  vertical-align: -1px;
+  margin-right: 2px;
+}
+
+.cal-legend .dot.has-record {
+  background: var(--success-bg);
+  border: 1px solid var(--success);
+}
+
+.cal-legend .dot.pending {
+  background: var(--warn-bg);
+  border: 1px solid var(--warn);
+}
+
+.cal-legend .dot.today {
+  border: 2px solid var(--primary);
+}
+
+#form {
+  scroll-margin-top: 80px;
+}
