@@ -37,6 +37,31 @@ function ledgerMessage(reply: ReceiptReply) {
     .join('\n')
 }
 
+// 전표에 적힌 단가가 (공급가+세액)÷수량 과도, 공급가÷수량 과도 다르면 그 품목을 알려 줌
+function unitPriceWarnings(items: unknown) {
+  if (!Array.isArray(items)) return []
+  return (
+    items as {
+      name: string
+      quantity: number | null
+      unit_price: number | null
+      line_total: number | null
+      tax?: number | null
+    }[]
+  )
+    .filter((it) => {
+      const q = Number(it.quantity),
+        p = it.unit_price,
+        t = it.line_total
+      if (!(q > 0) || p == null || t == null) return false
+      return Math.abs(p - (t + (it.tax ?? 0)) / q) > 1 && Math.abs(p - t / q) > 1
+    })
+    .map(
+      (it) =>
+        `${it.name}(전표 ${Math.round(it.unit_price!).toLocaleString('ko-KR')}원 · 계산 ${Math.round((it.line_total! + (it.tax ?? 0)) / Number(it.quantity)).toLocaleString('ko-KR')}원)`,
+    )
+}
+
 // 사진과 대조한 값으로 확정 → 실제 기록(receipt_items)으로 반영하고, 시트가 연결돼 있으면 장부에도 바로 적음
 export async function confirmReceipt(formData: FormData) {
   const me = await getCurrentProfile()
@@ -65,6 +90,8 @@ export async function confirmReceipt(formData: FormData) {
   )
 
   let message = '확정했습니다.'
+  const priceWarn = unitPriceWarnings(items)
+  if (priceWarn.length) message += `\n⚠️ 전표 단가와 계산한 단가가 다른 품목: ${priceWarn.join(', ')}`
   if ((await getSheetSettings()).webhook_url) message += '\n' + ledgerMessage(await sendReceiptToSheet(id, me.id))
   back(path, 'ok', message)
 }

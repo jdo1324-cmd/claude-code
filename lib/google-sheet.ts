@@ -70,6 +70,7 @@ export type ReceiptReply = ScriptReply & {
   written?: string[]
   skipped?: string[]
   noPrice?: string[]
+  writes?: { kind: 'ledger' | 'price'; tab: string; cell: string; amount: number }[]
 }
 
 type ItemRow = {
@@ -81,7 +82,8 @@ type ItemRow = {
   ledger_item: string | null
 }
 
-// 확정된 전표 1건을 장부에 씀 (다시 보내면 예전에 더한 금액을 빼고 다시 씀). undoOnly: 무효 처리 때 빼기만.
+// 확정된 전표 1건을 장부에 씀. 예전에 적은 칸(receipt_sheet_writes)을 같이 보내 먼저 되돌리게 함 → 다시 보내도 두 번 더해지지 않음.
+// undoOnly: 무효 처리 때 되돌리기만.
 export async function sendReceiptToSheet(
   receiptId: number,
   sentBy: string,
@@ -99,11 +101,14 @@ export async function sendReceiptToSheet(
   if (!receipt) return { ok: false, error: '전표를 찾을 수 없습니다.' }
   if (!undoOnly && receipt.status !== 'confirmed') return { ok: false, error: '확정된 전표만 장부로 보낼 수 있습니다.' }
 
-  const { data: itemData } = await admin
-    .from('receipt_items')
-    .select('item_name, quantity, unit, line_total, tax, ledger_item')
-    .eq('receipt_id', receiptId)
-    .order('line_no')
+  const [{ data: itemData }, { data: writeData }] = await Promise.all([
+    admin
+      .from('receipt_items')
+      .select('item_name, quantity, unit, line_total, tax, ledger_item')
+      .eq('receipt_id', receiptId)
+      .order('line_no'),
+    admin.from('receipt_sheet_writes').select('kind, tab, cell, amount').eq('receipt_id', receiptId).order('id'),
+  ])
   const items = (itemData ?? []) as ItemRow[]
 
   const reply = (await callScript(settings, {
@@ -113,6 +118,7 @@ export async function sendReceiptToSheet(
     date: receipt.receipt_date,
     vendor: receipt.vendor,
     undoOnly,
+    undo: (writeData ?? []).map((w) => ({ ...w, amount: Number(w.amount) })),
     lines: items.map((it) => ({
       ledger: it.ledger_item,
       receiptName: it.item_name,
@@ -122,8 +128,12 @@ export async function sendReceiptToSheet(
     })),
   })) as ReceiptReply
 
-  if (reply.ok && !undoOnly) {
-    await admin.from('receipt_sheet_exports').insert({ receipt_id: receiptId, sent_by: sentBy })
+  if (reply.ok) {
+    // 되돌린 기록은 지우고, 이번에 적은 칸을 새로 보관
+    await admin.from('receipt_sheet_writes').delete().eq('receipt_id', receiptId)
+    if (reply.writes?.length)
+      await admin.from('receipt_sheet_writes').insert(reply.writes.map((w) => ({ ...w, receipt_id: receiptId })))
+    if (!undoOnly) await admin.from('receipt_sheet_exports').insert({ receipt_id: receiptId, sent_by: sentBy })
   }
   return reply
 }
@@ -344,14 +354,17 @@ function doPost(e) {
 }
 
 // ---------- 전표 → 매장 매출 매입 장부 ----------
-// 전표 날짜의 "YY년M월" 탭에서 (장부 품목 줄) × (날짜 칸)을 찾아 금액을 더함.
-// 더한 내역은 "앱 전표 기록" 탭에 남겨서, 같은 전표를 다시 보내거나 무효로 하면 예전에 더한 금액을 먼저 뺌.
-// 평균단가: "단가 기록" 탭에 품목마다 한 줄씩 쓰고, "평균단가" 탭의 B(평균 단가)·C(kg 단가) 칸에 기록을 모아 계산하는 수식을 넣음.
-// 평균단가 탭에서 크기별로 나눈 품목(감자 10kg · 감자 20kg)은 전표 품목명의 크기로 고르고, "(종합)" 줄은 그 평균.
-const LEDGER_LOG = '앱 전표 기록';
-const PRICE_LOG = '단가 기록';
+// 1) 전표 날짜의 "YY년M월" 탭에서 (장부 품목 줄) × (날짜 칸)에 공급가+세액을 더함.
+// 2) "평균단가" 탭의 그 품목 줄 K열부터 오른쪽으로 이번 단가를 하나씩 이어 적고, B(평균 단가)·C(kg 단가)에 평균 수식.
+//    단가 = (공급가+세액) ÷ 수량을 최소 단위(I·J)당으로 맞춘 값. 크기별 줄(감자 10kg · 20kg)은 전표 품목명의 크기로 고르고,
+//    "(종합)" 줄은 크기별 kg 단가의 평균.
+// 어느 칸에 얼마를 적었는지는 앱이 보관했다가(writes), 다시 보내거나 무효 처리할 때 undo 로 보내 줌 → 그 몫만 빼거나 지움.
 const PRICE_TAB = '평균단가';
+const PRICE_COL = 11; // K열부터 단가를 이어 적음
 const MONTH_TEMPLATE = 'XX년X월';
+// 예전 방식에서 쓰던 기록 탭 (있으면 되돌릴 때만 읽음, 새로 만들지 않음)
+const OLD_LEDGER_LOG = '앱 전표 기록';
+const OLD_PRICE_LOG = '단가 기록';
 
 function writeReceipt(body) {
   const lock = LockService.getScriptLock();
@@ -361,10 +374,11 @@ function writeReceipt(body) {
     try {
       ss = SpreadsheetApp.openById(body.ledgerId);
     } catch (err) {
-      return { ok: false, error: '"매장 매출 매입 장부" 파일을 열지 못했습니다. Apps Script를 다시 배포하면서 권한을 허용했는지 확인해 주세요.' };
+      return { ok: false, error: '"매장 매출 매입 장부" 파일을 열지 못했습니다. Apps Script에서 checkLedgerAccess 를 ▶ 실행해 권한을 허용했는지 확인해 주세요.' };
     }
-    undoReceipt(ss, body.id);
-    const result = { ok: true, sheetName: ss.getName(), url: ss.getUrl(), tab: '', created: false, written: [], skipped: [], noPrice: [] };
+    undoWrites(ss, body.undo || []);
+    undoOldLogs(ss, body.id);
+    const result = { ok: true, sheetName: ss.getName(), url: ss.getUrl(), tab: '', created: false, written: [], skipped: [], noPrice: [], writes: [] };
     if (body.undoOnly) return result;
 
     const d = String(body.date).split('-').map(Number);
@@ -381,10 +395,9 @@ function writeReceipt(body) {
     if (col === -1) return { ok: false, error: '"' + sh.getName() + '" 탭 4번째 줄에서 ' + body.date + ' 날짜 칸을 찾지 못했습니다.' };
 
     const rows = ledgerRows(sh);
-    const log = getSheet(ss, LEDGER_LOG, ['전표번호', '탭', '칸', '더한 금액', '품목', '보낸 시각']);
-    const plog = getSheet(ss, PRICE_LOG, ['전표번호', '전표 날짜', '거래처', '구역', '품목', '전표 품목명', '수량', '단위', '금액', '환산 수량', '환산 단위', '환산 단위당 단가']);
     const ptab = ss.getSheetByName(PRICE_TAB);
     const prows = ptab ? priceRows(ptab) : [];
+    if (ptab && ptab.getRange(4, PRICE_COL).getValue() === '') ptab.getRange(4, PRICE_COL).setValue('단가 기록 (최소 단위당, 오래된 순) →');
 
     (body.lines || []).forEach(function (l) {
       if (!l.ledger) { result.skipped.push(l.receiptName + ' (장부 품목을 고르지 않음)'); return; }
@@ -401,18 +414,25 @@ function writeReceipt(body) {
       if (cell.getFormula()) { result.skipped.push(l.receiptName + ' → ' + name + ' (수식 칸이라 건드리지 않음)'); return; }
       const amount = Number(l.amount) || 0;
       cell.setValue((Number(cell.getValue()) || 0) + amount);
-      log.appendRow([body.id, sh.getName(), cell.getA1Notation(), amount, text(name), new Date()]);
+      result.writes.push({ kind: 'ledger', tab: sh.getName(), cell: cell.getA1Notation(), amount: amount });
       result.written.push(name);
 
       // 평균단가
+      if (!ptab) { result.noPrice.push(name + ' (평균단가 탭이 없음)'); return; }
       const p = findPriceRow(prows, hit.section, hit.name, l.receiptName);
       if (!p) { result.noPrice.push(name + ' (평균단가 탭에 없음)'); return; }
       if (p.error) { result.noPrice.push(name + ' (' + p.error + ')'); return; }
-      const conv = baseQty(l.quantity, l.unit, p.def);
-      if (!conv) result.noPrice.push(name + ' (' + l.quantity + (l.unit || '') + ' 를 기준 단위로 바꾸지 못함)');
-      plog.appendRow([body.id, body.date, text(body.vendor), text(hit.section), text(p.name), text(l.receiptName), Number(l.quantity) || '', text(l.unit), amount,
-        conv ? round(conv.qty, 4) : '', conv ? conv.unit : '', conv ? Math.round(amount / conv.qty) : '']);
-      setPriceFormulas(ptab, p, hit.section, p.name);
+      const qty = Number(l.quantity) || 0;
+      if (!(qty > 0)) { result.noPrice.push(name + ' (수량 없음)'); return; }
+      const conv = baseQty(qty, l.unit, p.def);
+      const hasMin = Number(p.def.I) > 0;
+      // 최소 단위(I·J)당 단가. 단위를 바꾸지 못하면 (공급가+세액) ÷ 수량 그대로
+      const price = conv && hasMin ? (amount / conv.qty) * minUnitSize(p.def) : amount / qty;
+      if (!(conv && hasMin)) result.noPrice.push(name + ' (' + qty + (l.unit || '') + '을 최소 단위로 바꾸지 못해 ' + Math.round(price) + '원을 그대로 적음)');
+      const pc = nextPriceCell(ptab, p.row);
+      pc.setValue(Math.round(price));
+      result.writes.push({ kind: 'price', tab: PRICE_TAB, cell: pc.getA1Notation(), amount: Math.round(price) });
+      setPriceFormulas(ptab, p);
       setTotalFormulas(ptab, prows, p);
     });
     return result;
@@ -421,25 +441,44 @@ function writeReceipt(body) {
   }
 }
 
-// 예전에 이 전표로 더한 금액을 빼고, 단가 기록 줄도 지움
-function undoReceipt(ss, id) {
-  const log = ss.getSheetByName(LEDGER_LOG);
+// 그 줄의 K열부터 오른쪽으로 첫 빈칸
+function nextPriceCell(ptab, row) {
+  const last = Math.max(ptab.getLastColumn(), PRICE_COL);
+  const v = ptab.getRange(row, PRICE_COL, 1, last - PRICE_COL + 1).getValues()[0];
+  let end = -1;
+  v.forEach(function (x, i) { if (x !== '' && x !== null) end = i; });
+  return ptab.getRange(row, PRICE_COL + end + 1);
+}
+
+// 앱이 보관한 이 전표의 기록대로 되돌림: 장부 칸은 그 금액만큼 빼고, 평균단가에 적은 단가 칸은 지움
+function undoWrites(ss, writes) {
+  writes.forEach(function (w) {
+    const sh = ss.getSheetByName(w.tab);
+    if (!sh) return;
+    const cell = sh.getRange(w.cell);
+    if (cell.getFormula()) return;
+    const now = Number(cell.getValue()) || 0;
+    if (w.kind === 'ledger') {
+      const next = now - Number(w.amount);
+      cell.setValue(Math.abs(next) < 0.5 ? '' : next);
+    } else if (Math.abs(now - Number(w.amount)) < 0.5) {
+      cell.setValue('');
+    }
+  });
+}
+
+// 예전 방식(기록 탭)으로 적었던 전표를 되돌릴 때
+function undoOldLogs(ss, id) {
+  const log = ss.getSheetByName(OLD_LEDGER_LOG);
   if (log && log.getLastRow() > 1) {
     const v = log.getRange(2, 1, log.getLastRow() - 1, 4).getValues();
     for (let i = v.length - 1; i >= 0; i--) {
       if (String(v[i][0]) !== String(id)) continue;
-      const sh = ss.getSheetByName(v[i][1]);
-      if (sh) {
-        const cell = sh.getRange(v[i][2]);
-        if (!cell.getFormula()) {
-          const next = (Number(cell.getValue()) || 0) - Number(v[i][3]);
-          cell.setValue(Math.abs(next) < 0.5 ? '' : next);
-        }
-      }
+      undoWrites(ss, [{ kind: 'ledger', tab: v[i][1], cell: v[i][2], amount: v[i][3] }]);
       log.deleteRow(i + 2);
     }
   }
-  const plog = ss.getSheetByName(PRICE_LOG);
+  const plog = ss.getSheetByName(OLD_PRICE_LOG);
   if (plog) removeRows(plog, id);
 }
 
@@ -538,30 +577,36 @@ function packSize(s) {
   return Number(m[1]) * (k === 'g' || k === 'ml' ? 0.001 : 1);
 }
 
-// "감자 (종합)" 줄: 크기별 줄(감자 10kg · 감자 20kg)의 kg 단가를 평균
+// "감자 (종합)" 줄: 크기별 줄(감자 10kg · 감자 20kg)의 kg 단가(C)를 평균
 function setTotalFormulas(ptab, prows, p) {
   const base = String(p.name).replace(/\\s*\\d+(?:\\.\\d+)?\\s*(kg|g|ml|l)(?![a-z]).*$/i, '');
   const total = prows.filter(function (r) { return norm(r.name) === norm(base) + '종합'; })[0];
   if (!total) return;
   const parts = prows.filter(function (r) { return norm(r.name).indexOf(norm(base)) === 0 && packSize(r.name) !== null; });
   const b = ptab.getRange(total.row, 2), c = ptab.getRange(total.row, 3);
-  const cf = '=IFERROR(AVERAGE(' + parts.map(function (r) { return 'C' + r.row; }).join(',') + '),"")';
+  const cf = '=IFERROR(ROUND(AVERAGE(' + parts.map(function (r) { return 'C' + r.row; }).join(',') + ')),"")';
   if (c.getFormula() || c.getValue() === '') c.setFormula(cf);
   const size = minUnitSize(total.def);
-  const bf = '=IFERROR(ROUND(C' + total.row + (size && size !== 1 ? '*' + size : '') + '),"")';
+  const bf = '=IFERROR(ROUND(C' + total.row + (size !== 1 ? '*' + size : '') + '),"")';
   if (b.getFormula() || b.getValue() === '') b.setFormula(bf);
 }
 
-// B(평균 단가) = 최소 단위(I·J)당, C(kg 단가) = 기준 단위(kg · L · 개 …)당. 칸에 직접 적은 값이 있으면 건드리지 않음.
-function setPriceFormulas(ptab, p, section, name) {
+// B(평균 단가) = K열부터 적힌 단가(최소 단위당)의 평균, C(kg 단가) = B ÷ 최소 단위 크기(kg · L · 개 …).
+// 칸에 직접 적은 값이 있으면 건드리지 않음.
+function setPriceFormulas(ptab, p) {
   const b = ptab.getRange(p.row, 2), c = ptab.getRange(p.row, 3);
-  const q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; };
-  const crit = "'" + PRICE_LOG + "'!$D:$D," + q(section) + ",'" + PRICE_LOG + "'!$E:$E," + q(name) + ",'" + PRICE_LOG + "'!$J:$J,\\">0\\"";
-  const cf = '=IFERROR(SUMIFS(\\'' + PRICE_LOG + '\\'!$I:$I,' + crit + ')/SUMIFS(\\'' + PRICE_LOG + '\\'!$J:$J,' + crit + '),"")';
-  if (c.getFormula() || c.getValue() === '') c.setFormula(cf);
-  const size = minUnitSize(p.def);
-  const bf = '=IFERROR(ROUND(C' + p.row + (size && size !== 1 ? '*' + size : '') + '),"")';
+  const col = colLetter(PRICE_COL);
+  const bf = '=IFERROR(ROUND(AVERAGE(' + col + p.row + ':' + p.row + ')),"")';
   if (b.getFormula() || b.getValue() === '') b.setFormula(bf);
+  const size = minUnitSize(p.def);
+  const cf = '=IFERROR(ROUND(B' + p.row + (size !== 1 ? '/' + size : '') + '),"")';
+  if (c.getFormula() || c.getValue() === '') c.setFormula(cf);
+}
+
+function colLetter(c) {
+  let s = '';
+  while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); }
+  return s;
 }
 
 function unitKey(u) {

@@ -133,12 +133,15 @@ export function ConfirmForm({
     return null
   })
   // 전표의 단가 × 수량이 공급가(또는 공급가+세액)와 다르면 알려만 줌 (확정은 됨)
+  // 전표에 적힌 단가가 계산한 단가((공급가+세액)÷수량, 또는 세액 빼고 공급가÷수량)와 다르면 알려 줌 (확정은 됨)
   const rowNote = rows.map((r) => {
     const q = num(r.quantity),
       p = num(r.unit_price),
       t = num(r.line_total)
-    return q != null && p != null && t != null && Math.abs(q * p - t) > 1 && Math.abs(q * p - amountOf(r)) > 1
-      ? `전표 단가×수량=${won(q * p)} (공급가와 다름)`
+    if (q == null || q <= 0 || p == null || t == null) return null
+    const withTax = amountOf(r) / q
+    return Math.abs(p - withTax) > 1 && Math.abs(p - t / q) > 1
+      ? `전표 단가 ${won(p)}가 계산한 단가 ${won(withTax)}와 다릅니다. 수량·공급가를 다시 확인해 주세요.`
       : null
   })
   const sum = rows.reduce((s, r) => s + amountOf(r), 0)
