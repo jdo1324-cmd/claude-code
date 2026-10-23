@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { IMAGE_EXT, shrinkImage } from '@/lib/image'
 import { createClient } from '@/lib/supabase/client'
@@ -12,7 +13,7 @@ export function ReceiptUpload({ date }: { date: string }) {
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
+  const router = useRouter()
 
   function removePhoto(index: number) {
     URL.revokeObjectURL(photos[index].url)
@@ -24,7 +25,6 @@ export function ReceiptUpload({ date }: { date: string }) {
     e.currentTarget.value = ''
     if (!file || photos.length >= MAX_PHOTOS) return
     setPhotos([...photos, { file, url: URL.createObjectURL(file) }])
-    setDone(false)
   }
 
   async function submit() {
@@ -35,7 +35,8 @@ export function ReceiptUpload({ date }: { date: string }) {
       const supabase = createClient()
       const paths: string[] = []
       for (const p of photos) {
-        const blob = await shrinkImage(p.file, 2000) // 글씨를 읽어야 하므로 조금 크게
+        // 글씨만 읽으면 되므로 흑백·낮은 화질로 저장 용량을 줄임 (한 장 100~200KB 정도)
+        const blob = await shrinkImage(p.file, 1600, { quality: 0.6, gray: true })
         const ext = IMAGE_EXT[blob.type]
         if (!ext || ext === 'heic' || ext === 'heif')
           throw new Error('JPG/PNG 사진만 올릴 수 있습니다. 카메라로 다시 찍어 주세요.')
@@ -49,23 +50,16 @@ export function ReceiptUpload({ date }: { date: string }) {
       const result = await submitReceipt(paths, note)
       if (result.error) throw new Error(result.error)
       photos.forEach((p) => URL.revokeObjectURL(p.url))
-      setPhotos([])
-      setNote('')
-      setDone(true)
+      // AI가 다 읽으면 그 화면에서 바로 확인·확정
+      router.push(`/receipts/${result.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : '전표를 올리지 못했습니다.')
-    } finally {
       setBusy(false)
     }
   }
 
   return (
     <div>
-      {done && (
-        <p className="alert alert-ok">
-          ✅ 전표를 올렸습니다. 사장님·관리자가 확인합니다. 다른 전표가 있으면 이어서 올려 주세요.
-        </p>
-      )}
       {error && <p className="alert alert-error">{error}</p>}
 
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', margin: '8px 0' }}>

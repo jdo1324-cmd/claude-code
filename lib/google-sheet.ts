@@ -1,13 +1,11 @@
 import 'server-only'
 import { ATTENDANCE_SELECT, monthRange, netMinutes, type AttendanceRecord } from '@/lib/attendance'
-import { RECEIPT_BUCKET } from '@/lib/receipt-ai'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-// 전표를 사장님의 구글 시트로 보냄.
-// 사장님 시트에 붙여 넣은 Apps Script(웹 앱)가 받아서 "전표" · "품목" 탭에 줄을 쓰고,
-// 사진은 사장님 구글 드라이브의 "매장관리 전표 사진" 폴더에 저장함.
+// 사장님 구글 시트로 보냄. 손익계산서에 붙여 넣은 Apps Script(웹 앱) 하나가 받아서
+// 인건비는 손익계산서에, 전표는 "매장 매출 매입 장부" 파일(ledger_file_id)에 씀. 사진은 보내지 않음.
 
-export type SheetSettings = { webhook_url: string | null; secret: string }
+export type SheetSettings = { webhook_url: string | null; secret: string; ledger_file_id: string | null }
 
 // Apps Script 웹 앱 주소만 허용 (다른 곳으로 전표가 새지 않게)
 const WEBHOOK_PATTERN = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/
@@ -19,7 +17,7 @@ export function isValidWebhookUrl(url: string) {
 export async function getSheetSettings(): Promise<SheetSettings> {
   const { data, error } = await createAdminClient()
     .from('google_sheet_settings')
-    .select('webhook_url, secret')
+    .select('webhook_url, secret, ledger_file_id')
     .eq('id', 1)
     .single()
   if (error || !data) throw new Error('구글 시트 설정을 불러오지 못했습니다')
@@ -62,76 +60,95 @@ export async function testConnection() {
   return callScript(await getSheetSettings(), { type: 'ping' })
 }
 
+export type ReceiptReply = ScriptReply & {
+  tab?: string
+  created?: boolean
+  written?: string[]
+  skipped?: string[]
+  noPrice?: string[]
+}
+
 type ItemRow = {
-  line_no: number
   item_name: string
   quantity: number
   unit: string | null
-  unit_price: number
   line_total: number
+  ledger_item: string | null
 }
 
-// 확정된 전표 1건을 시트로 보냄
-export async function sendReceiptToSheet(receiptId: number, sentBy: string): Promise<ScriptReply> {
+// 확정된 전표 1건을 장부에 씀 (다시 보내면 예전에 더한 금액을 빼고 다시 씀). undoOnly: 무효 처리 때 빼기만.
+export async function sendReceiptToSheet(
+  receiptId: number,
+  sentBy: string,
+  { undoOnly = false }: { undoOnly?: boolean } = {},
+): Promise<ReceiptReply> {
   const admin = createAdminClient()
   const settings = await getSheetSettings()
+  if (!settings.ledger_file_id) return { ok: false, error: '매장 매출 매입 장부 파일이 지정되지 않았습니다.' }
 
-  const { data: receipt } = await admin.from('receipts').select('*').eq('id', receiptId).maybeSingle()
+  const { data: receipt } = await admin
+    .from('receipts')
+    .select('status, receipt_date, vendor')
+    .eq('id', receiptId)
+    .maybeSingle()
   if (!receipt) return { ok: false, error: '전표를 찾을 수 없습니다.' }
-  if (receipt.status !== 'confirmed') return { ok: false, error: '확정된 전표만 시트로 보낼 수 있습니다.' }
+  if (!undoOnly && receipt.status !== 'confirmed') return { ok: false, error: '확정된 전표만 장부로 보낼 수 있습니다.' }
 
-  const [{ data: itemData }, { data: profileData }] = await Promise.all([
-    admin
-      .from('receipt_items')
-      .select('line_no, item_name, quantity, unit, unit_price, line_total')
-      .eq('receipt_id', receiptId)
-      .order('line_no'),
-    admin.from('profiles').select('id, full_name'),
-  ])
-  const nameOf = (id: string | null) => (profileData ?? []).find((p) => p.id === id)?.full_name ?? ''
+  const { data: itemData } = await admin
+    .from('receipt_items')
+    .select('item_name, quantity, unit, line_total, ledger_item')
+    .eq('receipt_id', receiptId)
+    .order('line_no')
   const items = (itemData ?? []) as ItemRow[]
 
-  // 사진 원본을 함께 보냄 (구글 드라이브에 저장됨)
-  const photos: { name: string; type: string; data: string }[] = []
-  for (const [i, path] of (receipt.photo_paths as string[]).entries()) {
-    const { data: blob } = await admin.storage.from(RECEIPT_BUCKET).download(path)
-    if (!blob) continue
-    const ext = path.split('.').pop() ?? 'jpg'
-    photos.push({
-      name: `전표${receiptId}-${i + 1}.${ext}`,
-      type: blob.type || 'image/jpeg',
-      data: Buffer.from(await blob.arrayBuffer()).toString('base64'),
-    })
-  }
-
-  const reply = await callScript(settings, {
+  const reply = (await callScript(settings, {
     type: 'receipt',
-    receipt: {
-      id: receiptId,
-      date: receipt.receipt_date,
-      vendor: receipt.vendor,
-      total: receipt.total_amount === null ? null : Number(receipt.total_amount),
-      uploadedBy: nameOf(receipt.created_by),
-      uploadedAt: receipt.created_at,
-      confirmedBy: nameOf(receipt.confirmed_by),
-      confirmedAt: receipt.confirmed_at,
-      note: receipt.note,
-      items: items.map((it) => ({
-        no: it.line_no,
-        name: it.item_name,
-        quantity: Number(it.quantity),
-        unit: it.unit,
-        unitPrice: Number(it.unit_price),
-        lineTotal: Number(it.line_total),
-      })),
-    },
-    photos,
-  })
+    ledgerId: settings.ledger_file_id,
+    id: receiptId,
+    date: receipt.receipt_date,
+    vendor: receipt.vendor,
+    undoOnly,
+    lines: items.map((it) => ({
+      ledger: it.ledger_item,
+      receiptName: it.item_name,
+      quantity: Number(it.quantity),
+      unit: it.unit,
+      amount: Number(it.line_total),
+    })),
+  })) as ReceiptReply
 
-  if (reply.ok) {
+  if (reply.ok && !undoOnly) {
     await admin.from('receipt_sheet_exports').insert({ receipt_id: receiptId, sent_by: sentBy })
   }
   return reply
+}
+
+// 장부의 품목 목록을 다시 불러와 앱의 "장부 품목" 고르기 목록을 새로 고침
+export async function refreshLedgerItems() {
+  const settings = await getSheetSettings()
+  const reply = (await callScript(settings, {
+    type: 'ledger_items',
+    ledgerId: settings.ledger_file_id,
+  })) as ScriptReply & {
+    tab?: string
+    items?: { section: string; name: string }[]
+  }
+  if (!reply.ok || !reply.items?.length) return { ok: false, error: reply.error ?? '장부에서 품목을 찾지 못했습니다.' }
+  const admin = createAdminClient()
+  const seen = new Set<string>()
+  const rows = reply.items
+    .filter((it) => {
+      const key = `${it.section}|${it.name}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    .map((it, i) => ({ section: it.section, name: it.name, sort_order: i + 1 }))
+  const { error: delError } = await admin.from('ledger_items').delete().gte('id', 0)
+  if (delError) return { ok: false, error: delError.message }
+  const { error } = await admin.from('ledger_items').insert(rows)
+  if (error) return { ok: false, error: error.message }
+  return { ok: true, tab: reply.tab, count: rows.length }
 }
 
 export type LaborReply = ScriptReply & {
@@ -294,11 +311,15 @@ export async function sendDayLaborRrnToSheet(month: string, name: string, rrn: s
 }
 
 // 사장님이 구글 시트에 붙여 넣을 Apps Script 코드 (비밀값이 들어 있음)
-export function appsScriptSource(secret: string) {
-  return `// 매장 운영 관리 앱 → 이 시트로 전표 받기
+export function appsScriptSource(secret: string, ledgerId: string | null) {
+  return `// 매장 운영 관리 앱 → 손익계산서(인건비) · 매장 매출 매입 장부(전표)
 // 이 코드는 그대로 붙여 넣으세요. 아래 비밀값은 바꾸지 마세요.
 const SECRET = '${secret}';
-const PHOTO_FOLDER = '매장관리 전표 사진';
+
+// 처음 한 번: 위 메뉴에서 이 함수를 고르고 ▶ 실행 → "매장 매출 매입 장부" 파일에 쓸 권한을 허용
+function checkLedgerAccess() {
+  Logger.log('장부 연결 확인: ' + SpreadsheetApp.openById('${ledgerId ?? ''}').getName());
+}
 
 function doPost(e) {
   const body = JSON.parse(e.postData.contents);
@@ -308,38 +329,282 @@ function doPost(e) {
   if (body.type === 'labor') return reply(writeLabor(ss, body));
   if (body.type === 'day_labor') return reply(writeDayLabor(ss, body));
   if (body.type === 'day_labor_rrn') return reply(writeDayLaborRrn(ss, body));
-  if (body.type !== 'receipt') return reply({ ok: false, error: '알 수 없는 요청' });
+  if (body.type === 'receipt') return reply(writeReceipt(body));
+  if (body.type === 'ledger_items') return reply(readLedgerItems(body));
+  return reply({ ok: false, error: '알 수 없는 요청' });
+}
 
+// ---------- 전표 → 매장 매출 매입 장부 ----------
+// 전표 날짜의 "YY년M월" 탭에서 (장부 품목 줄) × (날짜 칸)을 찾아 금액을 더함.
+// 더한 내역은 "앱 전표 기록" 탭에 남겨서, 같은 전표를 다시 보내거나 무효로 하면 예전에 더한 금액을 먼저 뺌.
+// 평균단가: "단가 기록" 탭에 품목마다 한 줄씩 쓰고, "평균단가" 탭의 B(평균 단가)·C(kg 단가) 칸에 기록을 모아 계산하는 수식을 넣음.
+const LEDGER_LOG = '앱 전표 기록';
+const PRICE_LOG = '단가 기록';
+const PRICE_TAB = '평균단가';
+const MONTH_TEMPLATE = 'XX년X월';
+
+function writeReceipt(body) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    const r = body.receipt;
-    const receipts = getSheet(ss, '전표', ['전표번호', '전표 날짜', '거래처', '합계', '품목 수', '사진', '올린 사람', '올린 시각', '확정한 사람', '확정 시각', '메모', '보낸 시각']);
-    const items = getSheet(ss, '품목', ['전표번호', '전표 날짜', '거래처', '줄', '품목', '수량', '단위', '단가', '금액']);
-
-    // 같은 전표를 다시 보내면 예전 줄과 사진을 지우고 새로 씀
-    removeRows(receipts, r.id);
-    removeRows(items, r.id);
-    const folder = getFolder();
-    const old = folder.searchFiles("title contains '전표" + r.id + "-'");
-    while (old.hasNext()) {
-      const f = old.next();
-      if (f.getName().indexOf('전표' + r.id + '-') === 0) f.setTrashed(true);
+    let ss;
+    try {
+      ss = SpreadsheetApp.openById(body.ledgerId);
+    } catch (err) {
+      return { ok: false, error: '"매장 매출 매입 장부" 파일을 열지 못했습니다. Apps Script를 다시 배포하면서 권한을 허용했는지 확인해 주세요.' };
     }
+    undoReceipt(ss, body.id);
+    const result = { ok: true, sheetName: ss.getName(), url: ss.getUrl(), tab: '', created: false, written: [], skipped: [], noPrice: [] };
+    if (body.undoOnly) return result;
 
-    const links = (body.photos || []).map(function (p) {
-      const blob = Utilities.newBlob(Utilities.base64Decode(p.data), p.type, p.name);
-      return folder.createFile(blob).getUrl();
+    const d = String(body.date).split('-').map(Number);
+    const t = monthTab(ss, d[0], d[1]);
+    if (t.error) return { ok: false, error: t.error };
+    const sh = t.sh;
+    result.tab = sh.getName();
+    result.created = t.created;
+    const head = sh.getRange(4, 1, 1, sh.getLastColumn()).getValues()[0];
+    let col = -1;
+    head.forEach(function (v, i) {
+      if (v instanceof Date && v.getFullYear() === d[0] && v.getMonth() + 1 === d[1] && v.getDate() === d[2]) col = i + 1;
     });
+    if (col === -1) return { ok: false, error: '"' + sh.getName() + '" 탭 4번째 줄에서 ' + body.date + ' 날짜 칸을 찾지 못했습니다.' };
 
-    receipts.appendRow([r.id, r.date, text(r.vendor), r.total, r.items.length, links.join('\\n'), text(r.uploadedBy), toDate(r.uploadedAt), text(r.confirmedBy), toDate(r.confirmedAt), text(r.note), new Date()]);
-    r.items.forEach(function (it) {
-      items.appendRow([r.id, r.date, text(r.vendor), it.no, text(it.name), it.quantity, text(it.unit), it.unitPrice, it.lineTotal]);
+    const rows = ledgerRows(sh);
+    const log = getSheet(ss, LEDGER_LOG, ['전표번호', '탭', '칸', '더한 금액', '품목', '보낸 시각']);
+    const plog = getSheet(ss, PRICE_LOG, ['전표번호', '전표 날짜', '거래처', '구역', '품목', '전표 품목명', '수량', '단위', '금액', '환산 수량', '환산 단위', '환산 단위당 단가']);
+    const ptab = ss.getSheetByName(PRICE_TAB);
+    const prows = ptab ? priceRows(ptab) : [];
+
+    (body.lines || []).forEach(function (l) {
+      if (!l.ledger) { result.skipped.push(l.receiptName + ' (장부 품목을 고르지 않음)'); return; }
+      const key = String(l.ledger).split('|');
+      const sec = key[0].trim();
+      const name = key.slice(1).join('|').trim();
+      let hit = rows.filter(function (r) { return r.section === sec && r.name === name; })[0];
+      if (!hit) {
+        const same = rows.filter(function (r) { return norm(r.name) === norm(name); });
+        if (same.length === 1) hit = same[0];
+      }
+      if (!hit) { result.skipped.push(l.receiptName + ' → ' + name + ' (장부에서 줄을 찾지 못함)'); return; }
+      const cell = sh.getRange(hit.row, col);
+      if (cell.getFormula()) { result.skipped.push(l.receiptName + ' → ' + name + ' (수식 칸이라 건드리지 않음)'); return; }
+      const amount = Number(l.amount) || 0;
+      cell.setValue((Number(cell.getValue()) || 0) + amount);
+      log.appendRow([body.id, sh.getName(), cell.getA1Notation(), amount, text(name), new Date()]);
+      result.written.push(name);
+
+      // 평균단가
+      const p = findPriceRow(prows, hit.section, hit.name);
+      if (!p) { result.noPrice.push(name + ' (평균단가 탭에 없음)'); return; }
+      const conv = baseQty(l.quantity, l.unit, p.def);
+      if (!conv) result.noPrice.push(name + ' (' + l.quantity + (l.unit || '') + ' 를 기준 단위로 바꾸지 못함)');
+      plog.appendRow([body.id, body.date, text(body.vendor), text(hit.section), text(hit.name), text(l.receiptName), Number(l.quantity) || '', text(l.unit), amount,
+        conv ? round(conv.qty, 4) : '', conv ? conv.unit : '', conv ? Math.round(amount / conv.qty) : '']);
+      setPriceFormulas(ptab, p, hit.section, hit.name);
     });
-    return reply({ ok: true, sheetName: ss.getName(), url: ss.getUrl() });
+    return result;
   } finally {
     lock.releaseLock();
   }
+}
+
+// 예전에 이 전표로 더한 금액을 빼고, 단가 기록 줄도 지움
+function undoReceipt(ss, id) {
+  const log = ss.getSheetByName(LEDGER_LOG);
+  if (log && log.getLastRow() > 1) {
+    const v = log.getRange(2, 1, log.getLastRow() - 1, 4).getValues();
+    for (let i = v.length - 1; i >= 0; i--) {
+      if (String(v[i][0]) !== String(id)) continue;
+      const sh = ss.getSheetByName(v[i][1]);
+      if (sh) {
+        const cell = sh.getRange(v[i][2]);
+        if (!cell.getFormula()) {
+          const next = (Number(cell.getValue()) || 0) - Number(v[i][3]);
+          cell.setValue(Math.abs(next) < 0.5 ? '' : next);
+        }
+      }
+      log.deleteRow(i + 2);
+    }
+  }
+  const plog = ss.getSheetByName(PRICE_LOG);
+  if (plog) removeRows(plog, id);
+}
+
+// "26년10월" 같은 탭. 없으면 "XX년X월"을 복사해 만들고 B2(년도)·C2(월)를 바꿈
+function monthTab(ss, y, m) {
+  const name = String(y).slice(2) + '년' + m + '월';
+  let sh = ss.getSheetByName(name);
+  if (sh) return { sh: sh, created: false };
+  const tpl = ss.getSheetByName(MONTH_TEMPLATE);
+  if (!tpl) return { error: '"' + name + '" 탭도, 복사할 "' + MONTH_TEMPLATE + '" 탭도 없습니다.' };
+  sh = tpl.copyTo(ss).setName(name);
+  sh.getRange('B2').setValue(y);
+  sh.getRange('C2').setValue(m);
+  SpreadsheetApp.flush();
+  return { sh: sh, created: true };
+}
+
+// "2-1-4. 프레시원 소계" 같은 제목 줄 → 구역 이름 "프레시원". "부가세 제외/포함" 줄은 구역이 아님.
+function sectionTitle(a) {
+  const m = String(a).match(/^\\d+(-\\d+)*\\.\\s*(.*)$/);
+  if (!m) return null;
+  const s = m[2].replace(/\\s*(소계|합계)\\s*$/, '').trim();
+  return s.indexOf('제외') !== -1 || s.indexOf('포함') !== -1 ? '' : s;
+}
+
+// 장부 탭의 품목 줄 (6번째 줄부터, 제목 줄 제외)
+function ledgerRows(sh) {
+  const vals = sh.getRange(1, 1, sh.getLastRow(), 1).getDisplayValues();
+  const rows = [];
+  let sec = '';
+  for (let i = 5; i < vals.length; i++) {
+    const a = String(vals[i][0]).trim();
+    if (!a) continue;
+    const title = sectionTitle(a);
+    if (title !== null) { if (title) sec = title; continue; }
+    rows.push({ row: i + 1, section: sec, name: a });
+  }
+  return rows;
+}
+
+// 앱의 장부 품목 목록을 새로 고칠 때: 가장 최근 "YY년M월" 탭(없으면 XX년X월)의 품목 줄
+function readLedgerItems(body) {
+  let ss;
+  try {
+    ss = SpreadsheetApp.openById(body.ledgerId);
+  } catch (err) {
+    return { ok: false, error: '"매장 매출 매입 장부" 파일을 열지 못했습니다.' };
+  }
+  let best = null, bestKey = -1;
+  ss.getSheets().forEach(function (s) {
+    const m = s.getName().match(/^(\\d\\d)년(\\d{1,2})월$/);
+    if (m && Number(m[1]) * 100 + Number(m[2]) > bestKey) { bestKey = Number(m[1]) * 100 + Number(m[2]); best = s; }
+  });
+  const sh = best || ss.getSheetByName(MONTH_TEMPLATE);
+  if (!sh) return { ok: false, error: '장부에서 월 탭을 찾지 못했습니다.' };
+  return { ok: true, tab: sh.getName(), items: ledgerRows(sh).map(function (r) { return { section: r.section, name: r.name }; }) };
+}
+
+// 평균단가 탭의 품목 줄과 단위 정의 (D: 1개당 무게 g, E·F: 박스 등, G·H: 안에 든 개수·단위, I·J: 최소 단위)
+function priceRows(ptab) {
+  const v = ptab.getRange(1, 1, ptab.getLastRow(), 10).getValues();
+  const rows = [];
+  let sec = '';
+  for (let i = 5; i < v.length; i++) {
+    const a = String(v[i][0]).trim();
+    if (!a) continue;
+    const title = sectionTitle(a);
+    if (title !== null) { if (title) sec = title; continue; }
+    rows.push({ row: i + 1, section: sec, name: a, def: { D: v[i][3], E: v[i][4], F: v[i][5], G: v[i][6], H: v[i][7], I: v[i][8], J: v[i][9] } });
+  }
+  return rows;
+}
+
+// 이름이 같은 줄. 같은 이름이 여러 구역에 있으면 구역 이름 첫 단어가 같은 쪽 (예: 네이버 식재료 ↔ 네이버 공산품)
+function findPriceRow(prows, section, name) {
+  const same = prows.filter(function (p) { return norm(p.name) === norm(name); });
+  if (same.length <= 1) return same[0] || null;
+  const first = norm(String(section).split(' ')[0]);
+  return same.filter(function (p) { return norm(p.section).indexOf(first) === 0; })[0] || null;
+}
+
+// B(평균 단가) = 최소 단위(I·J)당, C(kg 단가) = 기준 단위(kg · L · 개 …)당. 칸에 직접 적은 값이 있으면 건드리지 않음.
+function setPriceFormulas(ptab, p, section, name) {
+  const b = ptab.getRange(p.row, 2), c = ptab.getRange(p.row, 3);
+  const q = function (s) { return '"' + String(s).replace(/"/g, '""') + '"'; };
+  const crit = "'" + PRICE_LOG + "'!$D:$D," + q(section) + ",'" + PRICE_LOG + "'!$E:$E," + q(name) + ",'" + PRICE_LOG + "'!$J:$J,\\">0\\"";
+  const cf = '=IFERROR(SUMIFS(\\'' + PRICE_LOG + '\\'!$I:$I,' + crit + ')/SUMIFS(\\'' + PRICE_LOG + '\\'!$J:$J,' + crit + '),"")';
+  if (c.getFormula() || c.getValue() === '') c.setFormula(cf);
+  const size = minUnitSize(p.def);
+  const bf = '=IFERROR(ROUND(C' + p.row + (size && size !== 1 ? '*' + size : '') + '),"")';
+  if (b.getFormula() || b.getValue() === '') b.setFormula(bf);
+}
+
+function unitKey(u) {
+  const s = norm(u).replace(/\\./g, '');
+  if (['kg', '킬로', '키로', '킬로그램'].indexOf(s) !== -1) return 'kg';
+  if (['g', 'gr', '그램'].indexOf(s) !== -1) return 'g';
+  if (['l', 'ℓ', '리터'].indexOf(s) !== -1) return 'l';
+  if (['ml', '㎖', '미리'].indexOf(s) !== -1) return 'ml';
+  if (['box', 'bx', 'ct', 'c/t', '박스', '상자'].indexOf(s) !== -1) return '박스';
+  if (['ea', 'pc', 'pcs', '개'].indexOf(s) !== -1) return '개';
+  return s;
+}
+
+function measure(k) {
+  if (k === 'kg') return { dim: 'w', f: 1 };
+  if (k === 'g') return { dim: 'w', f: 0.001 };
+  if (k === 'l') return { dim: 'v', f: 1 };
+  if (k === 'ml') return { dim: 'v', f: 0.001 };
+  return null;
+}
+
+// 최소 단위(I·J)가 기준 단위로 몇인지 (예: 420g → 0.42 kg)
+function minUnitSize(def) {
+  const I = Number(def.I) || 0;
+  if (!I) return 1;
+  const J = unitKey(def.J), m = measure(J);
+  return m ? round(I * m.f, 6) : I;
+}
+
+// 전표의 수량·단위 → 기준 단위(kg · L, 무게·부피가 아닌 품목은 J 단위) 수량
+function baseQty(qty, unit, def) {
+  const q = Number(qty);
+  if (!(q > 0)) return null;
+  const J = unitKey(def.J), Jm = measure(J);
+  const base = Jm ? (Jm.dim === 'w' ? 'kg' : 'L') : String(def.J || '').trim();
+  if (!base) return null;
+  const toBase = function (n, k) {
+    const m = measure(k);
+    if (Jm && m && m.dim === Jm.dim) return n * m.f;
+    if (!Jm && k === J) return n;
+    return null;
+  };
+  const I = Number(def.I) || 0;
+  const F = unitKey(def.F), H = unitKey(def.H), G = Number(def.G) || 0;
+  let k = unitKey(unit);
+  if (!k) k = F || H || J;
+
+  // 1) 무게·부피(또는 최소 단위와 같은 단위)로 적힌 경우
+  const direct = toBase(q, k);
+  if (direct !== null) return { qty: direct, unit: base };
+  // H 단위(개·팩·봉지 …) 1개의 크기. "개"이고 D(1개당 무게 g)가 있으면 그 값을 씀
+  const sizeH = function () {
+    if (H === '개' && Number(def.D) > 0 && Jm && Jm.dim === 'w') return Number(def.D) / 1000;
+    return I ? toBase(I, J) : null;
+  };
+  // 2) 전표 단위가 H (개·팩·봉지 …)
+  if (H && k === H) {
+    const s = sizeH();
+    return s ? { qty: q * s, unit: base } : null;
+  }
+  // 3) 전표 단위가 F (박스·포 …)
+  if (F && k === F) {
+    if (G && H) {
+      const inBox = toBase(G, H);
+      if (inBox !== null) return { qty: q * inBox, unit: base };
+      const s = sizeH();
+      return s ? { qty: q * G * s, unit: base } : null;
+    }
+    const s = I ? toBase(I, J) : null;
+    return s ? { qty: q * s, unit: base } : null;
+  }
+  // 4) 박스·개 정의가 없는 품목: 전표 단위 1개 = 최소 단위(I·J)
+  if (!F && !H && I) {
+    const s = toBase(I, J);
+    return s ? { qty: q * s, unit: base } : null;
+  }
+  return null;
+}
+
+function norm(s) {
+  return String(s === null || s === undefined ? '' : s).replace(/[\\s()]/g, '').toLowerCase();
+}
+
+function round(n, d) {
+  const p = Math.pow(10, d);
+  return Math.round(n * p) / p;
 }
 
 // ---------- 인건비 탭에 출퇴근 기록 넣기 ----------
@@ -531,26 +796,11 @@ function removeRows(sh, id) {
   }
 }
 
-function getFolder() {
-  const props = PropertiesService.getScriptProperties();
-  const id = props.getProperty('PHOTO_FOLDER_ID');
-  if (id) {
-    try { return DriveApp.getFolderById(id); } catch (err) {}
-  }
-  const folder = DriveApp.createFolder(PHOTO_FOLDER);
-  props.setProperty('PHOTO_FOLDER_ID', folder.getId());
-  return folder;
-}
-
 // 글자가 = + - @ 로 시작하면 수식으로 바뀌지 않게
 function text(v) {
   if (v === null || v === undefined) return '';
   const s = String(v);
   return /^[=+\\-@]/.test(s) ? "'" + s : s;
-}
-
-function toDate(v) {
-  return v ? new Date(v) : '';
 }
 
 function reply(obj) {

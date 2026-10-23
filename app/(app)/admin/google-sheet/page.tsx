@@ -2,7 +2,7 @@ import { ConfirmButton } from '@/app/components/confirm-button'
 import { CopyButton } from '@/app/components/copy-button'
 import { requireOwner } from '@/lib/auth'
 import { appsScriptSource, getSheetSettings } from '@/lib/google-sheet'
-import { regenerateSecret, saveWebhookUrl, testSheet } from './actions'
+import { refreshLedger, regenerateSecret, saveWebhookUrl, testSheet } from './actions'
 
 export const maxDuration = 120
 
@@ -14,7 +14,7 @@ export default async function GoogleSheetPage({
   const { error, ok } = await searchParams
   await requireOwner()
   const settings = await getSheetSettings()
-  const script = appsScriptSource(settings.secret)
+  const script = appsScriptSource(settings.secret, settings.ledger_file_id)
   const connected = !!settings.webhook_url
 
   return (
@@ -24,10 +24,10 @@ export default async function GoogleSheetPage({
         <span className={connected ? 'badge badge-ok' : 'badge'}>{connected ? '연결됨' : '연결 안 됨'}</span>
       </div>
       <p className="small muted">
-        연결하면 두 가지를 버튼 한 번으로 보낼 수 있습니다. ① [전표 확인]에서 확정한 전표 → &quot;전표&quot; 탭(전표
-        1건당 1줄)과 &quot;품목&quot; 탭(품목 1개당 1줄). 사진은 구글 드라이브 &quot;매장관리 전표 사진&quot; 폴더에
-        저장됩니다. ② [월별 근무시간]의 출퇴근 기록 → &quot;N월 인건비&quot; 탭의 날짜 칸. ③ [일용직] 기록 → 같은 탭의
-        일용직 구역.
+        손익계산서에 코드 하나를 붙여 넣으면 세 가지가 시트로 갑니다. ① 확정한 전표 →{' '}
+        <strong>매장 매출 매입 장부</strong> 파일의 &quot;YY년M월&quot; 탭(품목 줄 × 전표 날짜 칸에 금액을 더함)과
+        &quot;평균단가&quot; 탭 (사진은 보내지 않음). ② [월별 근무시간]의 출퇴근 기록 → 손익계산서 &quot;N월
+        인건비&quot; 탭의 날짜 칸. ③ [일용직] 기록 → 같은 탭의 일용직 구역.
       </p>
       {error && <p className="alert alert-error">{error}</p>}
       {ok && <p className="alert alert-ok">{ok}</p>}
@@ -61,6 +61,10 @@ export default async function GoogleSheetPage({
             <strong>배포</strong>를 누르면 구글 계정 권한을 묻습니다. 사장님 계정을 고르고 허용합니다. (&quot;확인되지
             않은 앱&quot; 화면이 나오면 <strong>고급 → (안전하지 않음)으로 이동</strong>을 누르면 됩니다. 사장님이 직접
             만든 코드라서 나오는 안내입니다.)
+          </li>
+          <li>
+            위쪽 함수 고르는 칸에서 <strong>checkLedgerAccess</strong>를 고르고 <strong>▶ 실행</strong>을 누릅니다.
+            권한을 물으면 허용합니다. (매장 매출 매입 장부 파일에 쓰려면 한 번 필요합니다)
           </li>
           <li>
             마지막에 나오는 <strong>웹 앱 URL</strong>(https://script.google.com/macros/s/…/exec)을 복사해서 아래 칸에
@@ -98,6 +102,33 @@ export default async function GoogleSheetPage({
           <form action={testSheet} style={{ marginTop: 8 }}>
             <button type="submit" className="btn-secondary">
               연결 다시 확인
+            </button>
+          </form>
+        )}
+      </section>
+
+      <section>
+        <h2>매출 매입 장부 (전표)</h2>
+        <p className="small muted">
+          전표를 확정하면{' '}
+          {settings.ledger_file_id ? (
+            <a
+              href={`https://docs.google.com/spreadsheets/d/${settings.ledger_file_id}/edit`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              매장 매출 매입 장부
+            </a>
+          ) : (
+            '매장 매출 매입 장부'
+          )}
+          에 적힙니다. 장부에 품목 줄을 새로 만들거나 이름을 바꿨다면, 아래 버튼으로 전표 확인 화면의 &quot;장부
+          품목&quot; 목록을 새로 고치세요.
+        </p>
+        {connected && (
+          <form action={refreshLedger}>
+            <button type="submit" className="btn-secondary">
+              장부 품목 다시 불러오기
             </button>
           </form>
         )}

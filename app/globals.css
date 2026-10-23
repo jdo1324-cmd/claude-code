@@ -1300,3 +1300,68 @@ a.cal-day:hover {
 .alert-row:last-of-type {
   border-bottom: 0;
 }
+
+/* 전표 확인: 품목 카드 */
+.receipt-lines {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.receipt-line {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.receipt-line.warn {
+  border-color: var(--danger);
+  background: var(--danger-bg);
+}
+
+.receipt-line label,
+.receipt-head-fields label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.receipt-line input,
+.receipt-line select,
+.receipt-head-fields input {
+  width: 100%;
+  min-width: 0;
+}
+
+.receipt-line-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.receipt-line-nums {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.receipt-head-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 4px;
+}
+
+@media (max-width: 560px) {
+  .receipt-line-nums {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.select-warn {
+  border-color: var(--warn) !important;
+}

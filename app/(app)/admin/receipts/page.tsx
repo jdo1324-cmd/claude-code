@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase/server'
 import { ConfirmButton } from '@/app/components/confirm-button'
 import { sendUnsentToSheet } from './actions'
 
-// 안 보낸 전표를 한꺼번에 시트로 보낼 때 시간이 걸릴 수 있음
+// 안 적은 전표를 한꺼번에 장부에 적을 때 시간이 걸릴 수 있음
 export const maxDuration = 300
 
 const RECEIPT_LIST_SELECT =
@@ -69,11 +69,11 @@ export default async function ReceiptListPage({
         {r.status === 'confirmed' ? (
           sentIds.has(r.id) ? (
             <span className="badge badge-ok" style={{ marginLeft: 0 }}>
-              보냄
+              적음
             </span>
           ) : (
             <span className="badge" style={{ marginLeft: 0 }}>
-              안 보냄
+              안 적음
             </span>
           )
         ) : (
@@ -92,7 +92,7 @@ export default async function ReceiptListPage({
       <th>거래처</th>
       <th>합계</th>
       <th>메모</th>
-      <th>구글 시트</th>
+      <th>장부</th>
     </tr>
   )
 
@@ -101,14 +101,14 @@ export default async function ReceiptListPage({
       <RealtimeRefresh table="receipts" />
       <h1>거래처 전표</h1>
       <p className="small muted">
-        AI가 읽은 값은 제안일 뿐입니다. 사진과 대조해 <strong>확정</strong>해야 실제 기록과 단가 비교에 반영됩니다.
-        전표는 사장님·관리자만 볼 수 있습니다.
+        전표는 <strong>올린 직원이 직접</strong> AI가 읽은 값을 사진과 대조해 확정합니다. 확정하면 매출 매입 장부와
+        평균단가에 바로 적힙니다. 사장님·관리자도 여기서 확정·무효 처리할 수 있습니다.
       </p>
 
       {error && <p className="alert alert-error">{error}</p>}
       {ok && <p className="alert alert-ok">{ok}</p>}
 
-      <h2>확인 대기 ({pending.length}건)</h2>
+      <h2>확인 대기 ({pending.length}건, 올린 직원이 확정)</h2>
       <div className="table-wrap">
         <table>
           <thead>{head}</thead>
@@ -170,8 +170,8 @@ export default async function ReceiptListPage({
       <div className="row" style={{ justifyContent: 'space-between', marginTop: 28 }}>
         <h2 style={{ margin: 0 }}>최근 처리된 전표</h2>
         <form action={sendUnsentToSheet}>
-          <ConfirmButton message="확정됐지만 아직 구글 시트로 안 보낸 전표를 모두 보낼까요?">
-            📤 안 보낸 전표 모두 구글 시트로
+          <ConfirmButton message="확정됐지만 아직 장부에 안 적은 전표를 모두 적을까요?">
+            📤 안 적은 전표 모두 장부에 적기
           </ConfirmButton>
         </form>
       </div>

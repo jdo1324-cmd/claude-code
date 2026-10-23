@@ -24,7 +24,9 @@ export async function createEmployee(formData: FormData) {
   await requireOwner()
 
   const fullName = String(formData.get('full_name') ?? '').trim()
-  const email = String(formData.get('email') ?? '').trim().toLowerCase()
+  const email = String(formData.get('email') ?? '')
+    .trim()
+    .toLowerCase()
   const password = String(formData.get('password') ?? '')
   const role = String(formData.get('role')) as Role
   const employmentType = String(formData.get('employment_type')) as EmploymentType
