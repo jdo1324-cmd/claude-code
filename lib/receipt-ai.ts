@@ -36,8 +36,7 @@ export const ReceiptProposalSchema = z.object({
 export type ReceiptProposal = z.infer<typeof ReceiptProposalSchema>
 
 function prompt(photoCount: number, hints: string) {
-  return `이 사진 ${photoCount}장은 한식당이 거래처(식자재 업체 등)에서 받은 전표(거래명세표 또는 영수증)입니다.
-여러 장이면 한 전표의 이어지는 페이지일 수 있으니, 품목을 한 번씩만 모아 주세요.
+  return `${photoCount > 1 ? `이 사진 ${photoCount}장은 한 전표의 이어지는 페이지입니다. 품목을 한 번씩만 모아 주세요.\n` : ''}이 사진은 한식당이 거래처(식자재 업체 등)에서 받은 전표(거래명세표 또는 영수증)입니다.
 
 품목마다 품목명, 수량, 단위, 공급가(공급가액), 세액, 단가를 읽어 주세요.
 - 거래명세표에 "공급가액"과 "세액" 칸이 따로 있으면 line_total에 공급가액, tax에 세액을 넣어 주세요.

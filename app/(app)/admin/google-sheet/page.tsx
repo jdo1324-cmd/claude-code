@@ -53,6 +53,11 @@ export default async function GoogleSheetPage({
           <li>
             구글 드라이브에서 <strong>손익계산서</strong> 시트를 엽니다. (&quot;9월 인건비&quot;, &quot;X월 인건비&quot;
             탭이 있는 그 파일)
+            <br />
+            <span className="small text-warn">
+              ⚠️ 코드는 <strong>손익계산서 한 곳에만</strong> 붙입니다. 매장 매출 매입 장부에는 붙이지 않아도 됩니다
+              (손익계산서의 코드가 장부 파일을 열어서 전표를 적습니다). 그래서 웹 앱 URL도 하나입니다.
+            </span>
           </li>
           <li>
             시트 위쪽 메뉴에서 <strong>확장 프로그램 → Apps Script</strong>를 누릅니다.
@@ -100,6 +105,7 @@ export default async function GoogleSheetPage({
 
       <section>
         <h2>웹 앱 URL</h2>
+        <p className="small muted">손익계산서에 붙인 코드를 배포했을 때 나온 URL 하나만 넣습니다.</p>
         <form action={saveWebhookUrl} className="stack">
           <input
             name="webhook_url"

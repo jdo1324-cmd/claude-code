@@ -59,7 +59,9 @@ async function callScript(settings: SheetSettings, payload: Record<string, unkno
 // 손익계산서(코드를 붙여 넣은 파일)와 매장 매출 매입 장부를 둘 다 열어 봄
 export async function testConnection() {
   const settings = await getSheetSettings()
-  return callScript(settings, { type: 'ping', ledgerId: settings.ledger_file_id })
+  const reply = await callScript(settings, { type: 'ping', ledgerId: settings.ledger_file_id })
+  // 웹 앱 주소가 장부 파일에 붙인 코드의 것이면, 인건비가 장부 파일로 가 버림
+  return { ...reply, wrongFile: !!settings.ledger_file_id && !!reply.url?.includes(settings.ledger_file_id) }
 }
 
 export type ReceiptReply = ScriptReply & {

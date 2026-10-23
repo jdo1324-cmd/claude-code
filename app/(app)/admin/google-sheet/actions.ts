@@ -7,6 +7,8 @@ import { isValidWebhookUrl, refreshLedgerItems, testConnection } from '@/lib/goo
 import { createAdminClient } from '@/lib/supabase/admin'
 
 function connectionText(reply: Awaited<ReturnType<typeof testConnection>>) {
+  if (reply.wrongFile)
+    return `⚠️ 지금 웹 앱 URL은 "${reply.sheetName}"(매장 매출 매입 장부)에 붙인 코드의 주소입니다. 손익계산서에 붙인 코드의 웹 앱 URL로 바꿔 주세요. (장부 파일에는 코드가 필요 없습니다)`
   return [
     `· 인건비·일용직 → 손익계산서: "${reply.sheetName}" ✅`,
     reply.ledgerName
@@ -38,14 +40,14 @@ export async function saveWebhookUrl(formData: FormData) {
 
   const reply = await testConnection()
   if (!reply.ok) back('error', '주소는 저장했지만 연결 확인에 실패했습니다: ' + (reply.error ?? '알 수 없는 오류'))
-  back('ok', '연결되었습니다!\n' + connectionText(reply))
+  back(reply.wrongFile ? 'error' : 'ok', (reply.wrongFile ? '' : '연결되었습니다!\n') + connectionText(reply))
 }
 
 export async function testSheet() {
   await requireOwner()
   const reply = await testConnection()
   if (!reply.ok) back('error', reply.error ?? '연결 확인에 실패했습니다.')
-  back(reply.ledgerName ? 'ok' : 'error', '연결 확인 결과\n' + connectionText(reply))
+  back(reply.ledgerName && !reply.wrongFile ? 'ok' : 'error', '연결 확인 결과\n' + connectionText(reply))
 }
 
 // 비밀값이 새어 나간 것 같을 때: 새 값으로 바꾸면 예전 코드로는 받을 수 없음

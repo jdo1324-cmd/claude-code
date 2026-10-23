@@ -6,7 +6,8 @@ import { IMAGE_EXT, shrinkImage } from '@/lib/image'
 import { createClient } from '@/lib/supabase/client'
 import { submitReceipt } from './actions'
 
-const MAX_PHOTOS = 3
+// 전표는 한 번에 1장씩 (여러 장짜리 전표는 장마다 따로 올림)
+const MAX_PHOTOS = 1
 
 export function ReceiptUpload({ date }: { date: string }) {
   const [photos, setPhotos] = useState<{ file: File; url: string }[]>([])
@@ -79,7 +80,7 @@ export function ReceiptUpload({ date }: { date: string }) {
 
       {photos.length < MAX_PHOTOS && (
         <label className="file-button">
-          📷 {photos.length === 0 ? '전표 사진 찍기' : `다음 장 찍기 (${photos.length}/${MAX_PHOTOS})`}
+          📷 전표 사진 찍기
           <input
             type="file"
             accept="image/*"
@@ -91,7 +92,8 @@ export function ReceiptUpload({ date }: { date: string }) {
         </label>
       )}
       <p className="small muted">
-        전표가 여러 장이면 최대 {MAX_PHOTOS}장까지 이어서 찍을 수 있습니다. 글씨가 잘 보이게 찍어 주세요.
+        전표 1장을 글씨가 잘 보이게 찍어 주세요. 다시 찍으려면 [빼기]를 누르세요. 전표가 여러 장이면 장마다 따로 올려
+        주세요.
       </p>
 
       <p>
@@ -108,7 +110,7 @@ export function ReceiptUpload({ date }: { date: string }) {
         </label>
       </p>
       <button type="button" onClick={submit} disabled={busy || photos.length === 0} className="btn-lg">
-        {busy ? '올리는 중…' : `전표 올리기 (${photos.length}장)`}
+        {busy ? '올리는 중…' : '전표 올리기'}
       </button>
     </div>
   )
