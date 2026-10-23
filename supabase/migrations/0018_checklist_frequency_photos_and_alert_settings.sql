@@ -85,6 +85,7 @@ select cron.schedule('alert-tick', '*/5 * * * *', $$
       'Content-Type', 'application/json',
       'Authorization', 'Bearer ' || (select cron_secret from public.store_settings where id = 1)
     ),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    timeout_milliseconds := 30000
   )
 $$);
