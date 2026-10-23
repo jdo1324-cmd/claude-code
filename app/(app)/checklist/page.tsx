@@ -15,6 +15,7 @@ import {
   type ChecklistItem,
 } from '@/lib/checklist'
 import { formatTime, todayKST } from '@/lib/format'
+import { FEATURES } from '@/lib/features'
 import { createClient } from '@/lib/supabase/server'
 import { completeItem, voidEntry } from './actions'
 import { PhotoUpload } from './photo-upload'
@@ -186,7 +187,7 @@ export default async function ChecklistPage({
             <div className="small muted">
               전체 {p.allDone}/{p.allTotal} 완료
             </div>
-            {phase === 'close' && (
+            {phase === 'close' && FEATURES.salesReport && (
               <p className="alert alert-info small">
                 마감 필수 항목을 모두 끝내야 <Link href="/sales">매출 정산 보고서</Link>를 저장할 수 있습니다.
               </p>

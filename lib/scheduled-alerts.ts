@@ -1,10 +1,12 @@
 import 'server-only'
+import { ALERT_KINDS, SUMMARY_KIND_LABEL } from '@/lib/alert-settings'
 import { findAlerts } from '@/lib/alerts'
 import { PHASES, PHASE_LABEL, appliesOn, periodRange, type ChecklistItem } from '@/lib/checklist'
 import { notifyAdmins } from '@/lib/push'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 type Admin = ReturnType<typeof createAdminClient>
+export type SummaryKind = keyof typeof SUMMARY_KIND_LABEL
 
 function addDays(date: string, n: number) {
   const d = new Date(`${date}T00:00:00Z`)
@@ -64,26 +66,25 @@ export async function runChecklistReminder(admin: Admin, today: string) {
   return { required: required.length, missing: missing.length }
 }
 
-// 놓친 일 점검: 어제·오늘 생긴 일 중 아직 알리지 않은 것 (체크리스트 미완료는 위 알림에서)
-export async function runDailySummary(admin: Admin, today: string) {
+// 놓친 일 점검 (종류별로 따로): 어제·오늘 생긴 그 종류의 일 중 아직 알리지 않은 것.
+// 보낼 시각 이후에 생긴 일(예: 밤 21:30 자동 퇴근)은 다음 날 같은 알림에 [날짜]를 붙여 보냄
+export async function runSummaryKind(admin: Admin, today: string, kind: SummaryKind) {
+  const label = SUMMARY_KIND_LABEL[kind]
   const yesterday = addDays(today, -1)
-  const alerts = (await findAlerts(admin, today, 2)).filter((a) => a.date >= yesterday && a.kind !== '필수 업무 누락')
+  const alerts = (await findAlerts(admin, today, 2)).filter((a) => a.date >= yesterday && a.kind === label)
   const keyOf = (a: (typeof alerts)[number]) => `${a.date}|${a.kind}|${a.message}|${a.people.join(',')}`
   const { data: sentData } = await admin.from('alert_sent_keys').select('key').in('key', alerts.map(keyOf))
   const sent = new Set(((sentData ?? []) as { key: string }[]).map((r) => r.key))
   const fresh = alerts.filter((a) => !sent.has(keyOf(a)))
   if (fresh.length === 0) return { alerts: 0 }
 
-  const md = (d: string) => (d === today ? '' : `[${Number(d.slice(5, 7))}/${Number(d.slice(8))}] `)
-  const summary = fresh
-    .slice(0, 6)
-    .map((a) => `• ${md(a.date)}${a.kind}${a.people.length ? ` (${a.people.join(', ')})` : ''}`)
-    .join('\n')
+  const md = (d: string) => (d === today ? '오늘' : `${Number(d.slice(5, 7))}/${Number(d.slice(8))}`)
+  const lines = fresh.slice(0, 8).map((a) => `• ${md(a.date)}: ${a.people.length ? a.people.join(', ') : a.message}`)
   await notifyAdmins({
-    kind: 'daily_summary',
-    title: `확인할 일 ${fresh.length}건`,
-    body: summary + (fresh.length > 6 ? `\n외 ${fresh.length - 6}건` : ''),
-    url: '/admin/home',
+    kind,
+    title: `${ALERT_KINDS[kind].label} ${fresh.length}건`,
+    body: lines.join('\n') + (fresh.length > 8 ? `\n외 ${fresh.length - 8}건` : ''),
+    url: fresh[0].href,
   })
   await admin.from('alert_sent_keys').upsert(
     fresh.map((a) => ({ key: keyOf(a) })),

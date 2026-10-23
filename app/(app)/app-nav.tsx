@@ -56,7 +56,7 @@ export function AppNav({
 
   if (variant === 'tabs') {
     return (
-      <nav className="tab-bar" aria-label="주요 메뉴">
+      <nav className="tab-bar" aria-label="주요 메뉴" style={{ gridTemplateColumns: `repeat(${links.length}, 1fr)` }}>
         {links.map((l) => (
           <Link key={l.href} href={l.href} aria-current={isCurrent(pathname, l.href, links) ? 'page' : undefined}>
             {l.icon && (

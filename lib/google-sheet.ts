@@ -234,6 +234,59 @@ export async function sendLaborToSheet(
   return reply
 }
 
+// 일용직 근무 기록 → "N월 인건비" 탭의 일용직 구역
+// 날짜 칸에 근무시간, 칸 메모에 일급·추가근무 수당. 앱에서 지운 기록의 칸은 비움.
+export async function sendDayLaborToSheet(month: string, sentBy: string) {
+  const admin = createAdminClient()
+  const { start, end } = monthRange(month)
+  const { data } = await admin
+    .from('day_labor_entries')
+    .select('work_date, worker_name, hours, daily_wage, extra_pay, note, status')
+    .gte('work_date', start)
+    .lte('work_date', end)
+  const rows = (data ?? []) as {
+    work_date: string
+    worker_name: string
+    hours: number
+    daily_wage: number
+    extra_pay: number
+    note: string | null
+    status: 'valid' | 'void'
+  }[]
+  if (rows.length === 0) return { ok: false, error: '이 달에는 일용직 기록이 없습니다.' } as LaborReply
+
+  const workers = new Map<string, Record<string, { hours: number; note: string } | null>>()
+  const won = (n: number) => `${n.toLocaleString('ko-KR')}원`
+  for (const r of rows) {
+    const name = r.worker_name.trim()
+    const day = String(Number(r.work_date.slice(8)))
+    const days = workers.get(name) ?? {}
+    workers.set(name, days)
+    if (r.status === 'void') {
+      if (!(day in days)) days[day] = null // 지운 기록 → 그 칸 비움 (같은 날 유효한 기록이 있으면 아래에서 덮어씀)
+      continue
+    }
+    const prev = days[day]
+    const hours = Number(r.hours) + (prev ? prev.hours : 0)
+    const parts = [`일급 ${won(r.daily_wage)}`, r.extra_pay ? `추가근무 수당 ${won(r.extra_pay)}` : null, r.note]
+      .filter(Boolean)
+      .join(' · ')
+    days[day] = { hours, note: prev ? `${prev.note}\n${parts}` : parts }
+  }
+
+  const [year, mon] = month.split('-').map(Number)
+  const reply = (await callScript(await getSheetSettings(), {
+    type: 'day_labor',
+    year,
+    month: mon,
+    tabName: `${mon}월 인건비`,
+    templateName: 'X월 인건비',
+    workers: [...workers].map(([name, days]) => ({ name, days })),
+  })) as LaborReply
+  if (reply.ok) await admin.from('day_labor_sheet_exports').insert({ month, sent_by: sentBy })
+  return reply
+}
+
 // 사장님이 구글 시트에 붙여 넣을 Apps Script 코드 (비밀값이 들어 있음)
 export function appsScriptSource(secret: string) {
   return `// 매장 운영 관리 앱 → 이 시트로 전표 받기
@@ -247,6 +300,7 @@ function doPost(e) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (body.type === 'ping') return reply({ ok: true, sheetName: ss.getName(), url: ss.getUrl() });
   if (body.type === 'labor') return reply(writeLabor(ss, body));
+  if (body.type === 'day_labor') return reply(writeDayLabor(ss, body));
   if (body.type !== 'receipt') return reply({ ok: false, error: '알 수 없는 요청' });
 
   const lock = LockService.getScriptLock();
@@ -350,6 +404,73 @@ function writeLabor(ss, body) {
       }
       sh.getRange(row, from, 1, values.length).setValues([values]);
       result.written.push(st.name);
+    });
+    return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---------- 인건비 탭의 일용직 구역에 일용 근무 넣기 ----------
+// "성함" 제목 줄 아래 구역에서 이름으로 줄을 찾아(없으면 빈 줄에 이름 추가) 날짜 칸에 근무시간을 넣음.
+// 일급·추가근무 수당은 그 칸의 메모로 남김. 수식 칸과 주민번호 칸은 건드리지 않음.
+function writeDayLabor(ss, body) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    let sh = ss.getSheetByName(body.tabName);
+    let created = false;
+    if (!sh) {
+      const tpl = ss.getSheetByName(body.templateName);
+      if (!tpl) return { ok: false, error: '"' + body.tabName + '" 탭도, 복사할 "' + body.templateName + '" 탭도 없습니다.' };
+      sh = tpl.copyTo(ss).setName(body.tabName);
+      sh.getRange('B2').setValue(body.year);
+      sh.getRange('C2').setValue(body.month);
+      SpreadsheetApp.flush();
+      created = true;
+    }
+    const lastRow = sh.getLastRow();
+    const lastCol = sh.getLastColumn();
+    const names = sh.getRange(1, 1, lastRow, 1).getDisplayValues().map(function (r) { return String(r[0]).trim(); });
+    const headerRow = names.indexOf('성함') + 1;
+    if (headerRow === 0) return { ok: false, error: '"' + body.tabName + '" 탭에서 일용직 구역("성함" 제목 줄)을 찾지 못했습니다.' };
+
+    const head = sh.getRange(headerRow, 1, 1, lastCol).getValues()[0];
+    const dayCol = {};
+    head.forEach(function (v, i) {
+      if (v instanceof Date && v.getMonth() + 1 === Number(body.month)) dayCol[v.getDate()] = i + 1;
+    });
+    // 직원 줄: 제목 바로 아래부터 "총 근로 시간"(H열) 수식이 이어지는 곳까지
+    const hCol = sh.getRange(headerRow + 1, 8, Math.max(1, lastRow - headerRow), 1).getFormulas();
+    let count = 0;
+    while (count < hCol.length && hCol[count][0] !== '') count++;
+
+    const result = { ok: true, sheetName: ss.getName(), tab: body.tabName, created: created, written: [], added: [], unmatched: [] };
+    (body.workers || []).forEach(function (w) {
+      let row = -1;
+      for (let i = 0; i < count; i++) if (names[headerRow + i] === w.name) { row = headerRow + 1 + i; break; }
+      if (row === -1) {
+        for (let i = 0; i < count; i++) {
+          if (names[headerRow + i] === '') {
+            row = headerRow + 1 + i;
+            sh.getRange(row, 1).setValue(w.name);
+            names[headerRow + i] = w.name;
+            result.added.push(w.name);
+            break;
+          }
+        }
+      }
+      if (row === -1) { result.unmatched.push(w.name + ' (빈 줄 없음)'); return; }
+      Object.keys(w.days).forEach(function (d) {
+        const col = dayCol[Number(d)];
+        if (!col) return;
+        const cell = sh.getRange(row, col);
+        const v = w.days[d];
+        if (v === null) { cell.setValue(''); cell.setNote(''); return; }
+        cell.setValue(v.hours);
+        cell.setNote(v.note || '');
+      });
+      result.written.push(w.name);
     });
     return result;
   } finally {

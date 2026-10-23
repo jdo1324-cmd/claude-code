@@ -26,7 +26,8 @@ export default async function GoogleSheetPage({
       <p className="small muted">
         연결하면 두 가지를 버튼 한 번으로 보낼 수 있습니다. ① [전표 확인]에서 확정한 전표 → &quot;전표&quot; 탭(전표
         1건당 1줄)과 &quot;품목&quot; 탭(품목 1개당 1줄). 사진은 구글 드라이브 &quot;매장관리 전표 사진&quot; 폴더에
-        저장됩니다. ② [월별 근무시간]의 출퇴근 기록 → &quot;N월 인건비&quot; 탭의 날짜 칸.
+        저장됩니다. ② [월별 근무시간]의 출퇴근 기록 → &quot;N월 인건비&quot; 탭의 날짜 칸. ③ [일용직] 기록 → 같은 탭의
+        일용직 구역.
       </p>
       {error && <p className="alert alert-error">{error}</p>}
       {ok && <p className="alert alert-ok">{ok}</p>}

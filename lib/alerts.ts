@@ -1,4 +1,5 @@
 import 'server-only'
+import { FEATURES } from '@/lib/features'
 import { ATTENDANCE_SELECT, validBreak, type AttendanceRecord } from '@/lib/attendance'
 import { PHASES, PHASE_LABEL, appliesOn, type ChecklistEntry, type ChecklistItem } from '@/lib/checklist'
 import type { createClient } from '@/lib/supabase/server'
@@ -115,7 +116,7 @@ export async function findAlerts(supabase: Supabase, today: string, days = 7): P
     }
 
     // 4) 매출 보고서 미제출
-    if (!salesDates.has(date) && (date < today || now >= kst(date, '22:00'))) {
+    if (FEATURES.salesReport && !salesDates.has(date) && (date < today || now >= kst(date, '22:00'))) {
       const closers = dayRecords.filter(
         (r) => r.clock_out === null || r.auto_clock_out || new Date(r.clock_out).getTime() >= kst(date, '20:30'),
       )

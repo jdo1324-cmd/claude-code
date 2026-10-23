@@ -1,11 +1,17 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { getAlertSettings } from '@/lib/alert-settings'
+import { getAlertSettings, isKindVisible, type AlertKind } from '@/lib/alert-settings'
 import { isCronRequest } from '@/lib/cron'
 import { todayKST } from '@/lib/format'
-import { runChecklistReminder, runDailySummary } from '@/lib/scheduled-alerts'
+import { runChecklistReminder, runSummaryKind } from '@/lib/scheduled-alerts'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const JOBS = { checklist_reminder: runChecklistReminder, daily_summary: runDailySummary } as const
+const JOBS = {
+  checklist_reminder: runChecklistReminder,
+  missed_clock_out: (admin, today) => runSummaryKind(admin, today, 'missed_clock_out'),
+  missing_break: (admin, today) => runSummaryKind(admin, today, 'missing_break'),
+  photo_issue: (admin, today) => runSummaryKind(admin, today, 'photo_issue'),
+  missing_sales_report: (admin, today) => runSummaryKind(admin, today, 'missing_sales_report'),
+} satisfies Record<string, (admin: ReturnType<typeof createAdminClient>, today: string) => Promise<unknown>>
 
 // 지금 한국 시각 'HH:MM'
 function nowKstHHMM() {
@@ -24,7 +30,8 @@ export async function POST(request: NextRequest) {
 
   for (const s of await getAlertSettings()) {
     const job = JOBS[s.kind as keyof typeof JOBS]
-    if (!job || !s.enabled || !s.send_time || now < s.send_time.slice(0, 5)) continue
+    if (!job || !s.enabled || !isKindVisible(s.kind as AlertKind) || !s.send_time || now < s.send_time.slice(0, 5))
+      continue
     // 먼저 "오늘 보냄"을 기록 (5분마다 겹쳐 불려도 한 번만 보내도록)
     const { data: claimed } = await admin
       .from('alert_runs')

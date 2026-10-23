@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { getCurrentProfile, isAdmin } from '@/lib/auth'
+import { FEATURES } from '@/lib/features'
 import { EMPLOYMENT_LABEL, ROLE_LABEL } from '@/lib/format'
 import { AppNav, type NavLink } from './app-nav'
 
@@ -13,7 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     ...(admin ? [{ href: '/admin/home', label: owner ? '사장 홈' : '관리자 홈', icon: 'home' as const }] : []),
     { href: '/', label: '출퇴근', icon: 'clock' },
     { href: '/checklist', label: '체크리스트', icon: 'check' },
-    { href: '/sales', label: '매출 정산', icon: 'won' },
+    ...(FEATURES.salesReport ? [{ href: '/sales', label: '매출 정산', icon: 'won' as const }] : []),
     { href: '/receipts', label: '전표 올리기', icon: 'receipt' },
     { href: '/corrections', label: '정정 요청', icon: 'edit' },
   ]
@@ -24,9 +25,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         { href: '/admin/checklists', label: '체크리스트 기록' },
         { href: '/admin/receipts', label: '전표 확인' },
         { href: '/admin/hours', label: '월별 근무시간' },
+        { href: '/admin/day-labor', label: '일용직' },
         ...(owner
           ? [
-              { href: '/admin/sales', label: '월 매출' },
+              ...(FEATURES.salesReport ? [{ href: '/admin/sales', label: '월 매출' }] : []),
               { href: '/admin/pay', label: '급여' },
               { href: '/admin/checklist-items', label: '체크리스트 설정' },
               { href: '/admin/google-sheet', label: '구글 시트 연결' },

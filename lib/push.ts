@@ -1,6 +1,6 @@
 import 'server-only'
 import webpush from 'web-push'
-import { isAlertEnabled, type AlertKind } from '@/lib/alert-settings'
+import { isAlertEnabled, isWebPushEnabled, type AlertKind } from '@/lib/alert-settings'
 import { notifyAdminsJandi } from '@/lib/jandi'
 import { createAdminClient } from '@/lib/supabase/admin'
 
@@ -81,6 +81,8 @@ export async function notifyAdmins(message: PushMessage) {
   if (message.kind && !(await isAlertEnabled(message.kind))) return 0
   const [pushed] = await Promise.all([
     (async () => {
+      // 휴대폰 웹 알림을 꺼 두었으면 잔디로만
+      if (!(await isWebPushEnabled())) return 0
       try {
         const admin = createAdminClient()
         const { data } = await admin

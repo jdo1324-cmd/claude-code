@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
-import { ALERT_KINDS, type AlertKind } from '@/lib/alert-settings'
+import { ALERT_KINDS, WEB_PUSH_CHANNEL, isKindVisible, type AlertKind } from '@/lib/alert-settings'
 import { requireOwner } from '@/lib/auth'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { todayKST } from '@/lib/format'
@@ -11,19 +11,30 @@ export async function saveAlertSettings(formData: FormData) {
   const me = await requireOwner()
   const admin = createAdminClient()
   const now = new Date().toISOString()
-  const rows = (Object.keys(ALERT_KINDS) as AlertKind[]).map((kind) => {
-    const raw = String(formData.get(`time_${kind}`) ?? '')
-    const time = ALERT_KINDS[kind].scheduled && /^\d{2}:\d{2}$/.test(raw) ? raw : null
-    if (ALERT_KINDS[kind].scheduled && !time) {
-      redirect('/admin/alerts?error=' + encodeURIComponent(`${ALERT_KINDS[kind].label}: 보낼 시각을 정해 주세요.`))
-    }
-    return {
-      kind,
-      enabled: formData.get(`enabled_${kind}`) === 'on',
-      send_time: time,
-      updated_by: me.id,
-      updated_at: now,
-    }
+  const rows: { kind: string; enabled: boolean; send_time: string | null; updated_by: string; updated_at: string }[] = (
+    Object.keys(ALERT_KINDS) as AlertKind[]
+  )
+    .filter(isKindVisible)
+    .map((kind) => {
+      const raw = String(formData.get(`time_${kind}`) ?? '')
+      const time = ALERT_KINDS[kind].scheduled && /^\d{2}:\d{2}$/.test(raw) ? raw : null
+      if (ALERT_KINDS[kind].scheduled && !time) {
+        redirect('/admin/alerts?error=' + encodeURIComponent(`${ALERT_KINDS[kind].label}: 보낼 시각을 정해 주세요.`))
+      }
+      return {
+        kind,
+        enabled: formData.get(`enabled_${kind}`) === 'on',
+        send_time: time,
+        updated_by: me.id,
+        updated_at: now,
+      }
+    })
+  rows.push({
+    kind: WEB_PUSH_CHANNEL,
+    enabled: formData.get('web_push') === 'on',
+    send_time: null,
+    updated_by: me.id,
+    updated_at: now,
   })
   const { error } = await admin.from('alert_settings').upsert(rows, { onConflict: 'kind' })
   if (error) redirect('/admin/alerts?error=' + encodeURIComponent('저장하지 못했습니다: ' + error.message))
