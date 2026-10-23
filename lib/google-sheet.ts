@@ -338,6 +338,7 @@ function doPost(e) {
 // 전표 날짜의 "YY년M월" 탭에서 (장부 품목 줄) × (날짜 칸)을 찾아 금액을 더함.
 // 더한 내역은 "앱 전표 기록" 탭에 남겨서, 같은 전표를 다시 보내거나 무효로 하면 예전에 더한 금액을 먼저 뺌.
 // 평균단가: "단가 기록" 탭에 품목마다 한 줄씩 쓰고, "평균단가" 탭의 B(평균 단가)·C(kg 단가) 칸에 기록을 모아 계산하는 수식을 넣음.
+// 평균단가 탭에서 크기별로 나눈 품목(감자 10kg · 감자 20kg)은 전표 품목명의 크기로 고르고, "(종합)" 줄은 그 평균.
 const LEDGER_LOG = '앱 전표 기록';
 const PRICE_LOG = '단가 기록';
 const PRICE_TAB = '평균단가';
@@ -395,13 +396,15 @@ function writeReceipt(body) {
       result.written.push(name);
 
       // 평균단가
-      const p = findPriceRow(prows, hit.section, hit.name);
+      const p = findPriceRow(prows, hit.section, hit.name, l.receiptName);
       if (!p) { result.noPrice.push(name + ' (평균단가 탭에 없음)'); return; }
+      if (p.error) { result.noPrice.push(name + ' (' + p.error + ')'); return; }
       const conv = baseQty(l.quantity, l.unit, p.def);
       if (!conv) result.noPrice.push(name + ' (' + l.quantity + (l.unit || '') + ' 를 기준 단위로 바꾸지 못함)');
-      plog.appendRow([body.id, body.date, text(body.vendor), text(hit.section), text(hit.name), text(l.receiptName), Number(l.quantity) || '', text(l.unit), amount,
+      plog.appendRow([body.id, body.date, text(body.vendor), text(hit.section), text(p.name), text(l.receiptName), Number(l.quantity) || '', text(l.unit), amount,
         conv ? round(conv.qty, 4) : '', conv ? conv.unit : '', conv ? Math.round(amount / conv.qty) : '']);
-      setPriceFormulas(ptab, p, hit.section, hit.name);
+      setPriceFormulas(ptab, p, hit.section, p.name);
+      setTotalFormulas(ptab, prows, p);
     });
     return result;
   } finally {
@@ -502,11 +505,42 @@ function priceRows(ptab) {
 }
 
 // 이름이 같은 줄. 같은 이름이 여러 구역에 있으면 구역 이름 첫 단어가 같은 쪽 (예: 네이버 식재료 ↔ 네이버 공산품)
-function findPriceRow(prows, section, name) {
+function findPriceRow(prows, section, name, receiptName) {
   const same = prows.filter(function (p) { return norm(p.name) === norm(name); });
-  if (same.length <= 1) return same[0] || null;
-  const first = norm(String(section).split(' ')[0]);
-  return same.filter(function (p) { return norm(p.section).indexOf(first) === 0; })[0] || null;
+  if (same.length === 1) return same[0];
+  if (same.length > 1) {
+    const first = norm(String(section).split(' ')[0]);
+    return same.filter(function (p) { return norm(p.section).indexOf(first) === 0; })[0] || null;
+  }
+  // 크기별로 나눈 줄 (예: 감자 10kg · 감자 20kg): 전표 품목명에 적힌 크기로 고름
+  const sizes = prows.filter(function (p) { return norm(p.name).indexOf(norm(name)) === 0 && packSize(p.name) !== null; });
+  if (!sizes.length) return null;
+  const want = packSize(receiptName);
+  const hit = sizes.filter(function (p) { return want !== null && Math.abs(packSize(p.name) - want) < 1e-9; })[0];
+  if (hit) return hit;
+  return { error: sizes.map(function (p) { return p.name; }).join(' / ') + ' 중 어느 것인지 몰라서 (전표 품목명에 크기를 적어 주세요. 예: ' + sizes[0].name + ')' };
+}
+
+// "감자 20kg 왕특" → 20 (kg). 500g → 0.5, 1.8L → 1.8. 크기가 없으면 null
+function packSize(s) {
+  const m = String(s || '').match(/(\\d+(?:\\.\\d+)?)\\s*(kg|g|ml|l)(?![a-z])/i);
+  if (!m) return null;
+  const k = unitKey(m[2]);
+  return Number(m[1]) * (k === 'g' || k === 'ml' ? 0.001 : 1);
+}
+
+// "감자 (종합)" 줄: 크기별 줄(감자 10kg · 감자 20kg)의 kg 단가를 평균
+function setTotalFormulas(ptab, prows, p) {
+  const base = String(p.name).replace(/\\s*\\d+(?:\\.\\d+)?\\s*(kg|g|ml|l)(?![a-z]).*$/i, '');
+  const total = prows.filter(function (r) { return norm(r.name) === norm(base) + '종합'; })[0];
+  if (!total) return;
+  const parts = prows.filter(function (r) { return norm(r.name).indexOf(norm(base)) === 0 && packSize(r.name) !== null; });
+  const b = ptab.getRange(total.row, 2), c = ptab.getRange(total.row, 3);
+  const cf = '=IFERROR(AVERAGE(' + parts.map(function (r) { return 'C' + r.row; }).join(',') + '),"")';
+  if (c.getFormula() || c.getValue() === '') c.setFormula(cf);
+  const size = minUnitSize(total.def);
+  const bf = '=IFERROR(ROUND(C' + total.row + (size && size !== 1 ? '*' + size : '') + '),"")';
+  if (b.getFormula() || b.getValue() === '') b.setFormula(bf);
 }
 
 // B(평균 단가) = 최소 단위(I·J)당, C(kg 단가) = 기준 단위(kg · L · 개 …)당. 칸에 직접 적은 값이 있으면 건드리지 않음.
