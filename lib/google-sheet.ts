@@ -235,28 +235,24 @@ export async function sendLaborToSheet(
 }
 
 // 일용직 근무 기록 → "N월 인건비" 탭의 일용직 구역
-// 날짜 칸에 근무시간, 칸 메모에 일급·추가근무 수당. 앱에서 지운 기록의 칸은 비움.
+// 날짜 칸에 근무시간만 (셀 메모는 넣지 않음). 앱에서 지운 기록의 칸은 비움.
 export async function sendDayLaborToSheet(month: string, sentBy: string) {
   const admin = createAdminClient()
   const { start, end } = monthRange(month)
   const { data } = await admin
     .from('day_labor_entries')
-    .select('work_date, worker_name, hours, daily_wage, extra_pay, note, status')
+    .select('work_date, worker_name, hours, status')
     .gte('work_date', start)
     .lte('work_date', end)
   const rows = (data ?? []) as {
     work_date: string
     worker_name: string
     hours: number
-    daily_wage: number
-    extra_pay: number
-    note: string | null
     status: 'valid' | 'void'
   }[]
   if (rows.length === 0) return { ok: false, error: '이 달에는 일용직 기록이 없습니다.' } as LaborReply
 
   const workers = new Map<string, Record<string, { hours: number; note: string } | null>>()
-  const won = (n: number) => `${n.toLocaleString('ko-KR')}원`
   for (const r of rows) {
     const name = r.worker_name.trim()
     const day = String(Number(r.work_date.slice(8)))
@@ -266,12 +262,8 @@ export async function sendDayLaborToSheet(month: string, sentBy: string) {
       if (!(day in days)) days[day] = null // 지운 기록 → 그 칸 비움 (같은 날 유효한 기록이 있으면 아래에서 덮어씀)
       continue
     }
-    const prev = days[day]
-    const hours = Number(r.hours) + (prev ? prev.hours : 0)
-    const parts = [`일급 ${won(r.daily_wage)}`, r.extra_pay ? `추가근무 수당 ${won(r.extra_pay)}` : null, r.note]
-      .filter(Boolean)
-      .join(' · ')
-    days[day] = { hours, note: prev ? `${prev.note}\n${parts}` : parts }
+    // 메모는 빈 값으로 보냄 → 시트에 붙여 둔 Apps Script가 예전에 넣은 셀 메모도 지움
+    days[day] = { hours: Number(r.hours) + (days[day]?.hours ?? 0), note: '' }
   }
 
   const [year, mon] = month.split('-').map(Number)
@@ -466,7 +458,7 @@ function dayLaborRow(sec, name, added) {
   return -1;
 }
 
-// 날짜 칸에 근무시간, 칸 메모에 일급·추가근무 수당. 수식 칸과 주민번호 칸은 건드리지 않음.
+// 날짜 칸에 근무시간 (메모는 앱이 보낸 값, 지금은 빈 값 → 셀 메모 없음). 수식 칸과 주민번호 칸은 건드리지 않음.
 function writeDayLabor(ss, body) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
