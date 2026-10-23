@@ -15,7 +15,8 @@ const FIX_LABEL = {
   unit: '단위',
   quantity: '수량',
   unit_price: '단가',
-  line_total: '금액',
+  line_total: '공급가',
+  tax: '세액',
   added: '빠뜨린 줄',
   removed: '없는 줄을 읽음',
 } as const

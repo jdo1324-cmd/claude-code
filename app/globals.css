@@ -76,8 +76,15 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo',
-    'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  font-family:
+    'Pretendard Variable',
+    Pretendard,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Apple SD Gothic Neo',
+    'Noto Sans KR',
+    'Malgun Gothic',
+    sans-serif;
   font-size: 16px;
   line-height: 1.6;
   word-break: keep-all;
@@ -219,7 +226,9 @@ button,
   color: var(--primary-ink);
   cursor: pointer;
   text-decoration: none;
-  transition: filter 0.15s, transform 0.05s;
+  transition:
+    filter 0.15s,
+    transform 0.05s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -1364,4 +1373,18 @@ a.cal-day:hover {
 
 .select-warn {
   border-color: var(--warn) !important;
+}
+
+.receipt-calc {
+  display: grid;
+  gap: 2px;
+  align-content: end;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.receipt-calc strong {
+  color: var(--ink);
+  font-size: 15px;
+  padding-bottom: 8px;
 }

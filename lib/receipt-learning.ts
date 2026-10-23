@@ -14,6 +14,7 @@ type ConfirmedLine = {
   unit: string | null
   unit_price: number | null
   line_total: number | null
+  tax?: number | null
   ai_line?: number | null
 }
 
@@ -52,6 +53,7 @@ export async function recordCorrections(receiptId: number, lines: ConfirmedLine[
     if (!sameNum(ai.quantity, line.quantity)) add('quantity', ai.quantity, line.quantity, line.name)
     if (!sameNum(ai.unit_price, line.unit_price)) add('unit_price', ai.unit_price, line.unit_price, line.name)
     if (!sameNum(ai.line_total, line.line_total)) add('line_total', ai.line_total, line.line_total, line.name)
+    if (!sameNum(ai.tax ?? null, line.tax ?? null)) add('tax', ai.tax, line.tax, line.name)
   }
   proposal.items.forEach((ai, i) => {
     if (!used.has(i)) add('removed', ai.name, null, ai.name)

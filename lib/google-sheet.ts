@@ -75,6 +75,7 @@ type ItemRow = {
   quantity: number
   unit: string | null
   line_total: number
+  tax: number | null
   ledger_item: string | null
 }
 
@@ -98,7 +99,7 @@ export async function sendReceiptToSheet(
 
   const { data: itemData } = await admin
     .from('receipt_items')
-    .select('item_name, quantity, unit, line_total, ledger_item')
+    .select('item_name, quantity, unit, line_total, tax, ledger_item')
     .eq('receipt_id', receiptId)
     .order('line_no')
   const items = (itemData ?? []) as ItemRow[]
@@ -115,7 +116,7 @@ export async function sendReceiptToSheet(
       receiptName: it.item_name,
       quantity: Number(it.quantity),
       unit: it.unit,
-      amount: Number(it.line_total),
+      amount: Number(it.line_total) + Number(it.tax ?? 0), // 공급가 + 세액
     })),
   })) as ReceiptReply
 

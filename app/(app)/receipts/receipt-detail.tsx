@@ -42,7 +42,7 @@ export async function ReceiptDetail({
     supabase.storage.from(RECEIPT_BUCKET).createSignedUrls(receipt.photo_paths, 60 * 60),
     supabase.from('profiles').select('id, full_name'),
     supabase.from('receipt_price_history').select('*').eq('receipt_id', id).order('id'),
-    supabase.from('receipt_items').select('id, ledger_item').eq('receipt_id', id),
+    supabase.from('receipt_items').select('id, ledger_item, tax').eq('receipt_id', id),
     supabase
       .from('receipt_sheet_exports')
       .select('sent_at, sent_by')
@@ -56,9 +56,10 @@ export async function ReceiptDetail({
     ((profileData ?? []) as Pick<Profile, 'id' | 'full_name'>[]).map((p) => [p.id, p.full_name]),
   )
   const prices = (priceData ?? []) as PriceRow[]
-  const ledgerOf = Object.fromEntries(
-    ((itemData ?? []) as { id: number; ledger_item: string | null }[]).map((it) => [it.id, it.ledger_item]),
-  )
+  const itemRows = (itemData ?? []) as { id: number; ledger_item: string | null; tax: number | null }[]
+  const ledgerOf = Object.fromEntries(itemRows.map((it) => [it.id, it.ledger_item]))
+  const taxOf = Object.fromEntries(itemRows.map((it) => [it.id, it.tax]))
+
   const open = ['proposed', 'failed'].includes(receipt.status)
 
   return (
@@ -151,8 +152,9 @@ export async function ReceiptDetail({
                       <tr>
                         <th>품목</th>
                         <th>수량</th>
+                        <th>공급가</th>
+                        <th>세액</th>
                         <th>단가</th>
-                        <th>금액</th>
                         <th>장부 품목</th>
                         <th>지난번 대비 단가</th>
                       </tr>
@@ -168,8 +170,9 @@ export async function ReceiptDetail({
                               {Number(p.quantity)}
                               {p.unit}
                             </td>
-                            <td className="num">{won(p.unit_price)}</td>
                             <td className="num">{won(p.line_total)}</td>
+                            <td className="num">{taxOf[p.id] == null ? '-' : won(taxOf[p.id])}</td>
+                            <td className="num">{won(p.unit_price)}</td>
                             <td className="small">{ledger ? ledger.replace('|', ' · ') : '안 적음'}</td>
                             <td
                               style={{

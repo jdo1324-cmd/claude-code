@@ -12,6 +12,7 @@ type Row = {
   unit: string
   unit_price: string
   line_total: string
+  tax: string
   ledger: string
   ai: number | null
 }
@@ -74,7 +75,7 @@ function ConfirmButton({ warnings }: { warnings: number }) {
       className="btn-lg"
       onClick={(e) => {
         const msg =
-          (warnings > 0 ? `⚠️ 계산이 맞지 않는 곳이 ${warnings}군데 있습니다.\n\n` : '') +
+          (warnings > 0 ? `⚠️ 확인할 곳이 ${warnings}군데 있습니다.\n\n` : '') +
           '사진과 대조해서 확인했나요? 확정하면 실제 기록으로 반영되고 수정할 수 없습니다 (틀리면 무효 처리).'
         if (!window.confirm(msg)) e.preventDefault()
       }}
@@ -112,23 +113,35 @@ export function ConfirmForm({
           unit: i.unit ?? '',
           unit_price: str(i.unit_price),
           line_total: str(i.line_total),
+          tax: str(i.tax),
           ledger: guessLedger(i.name, proposal.vendor ?? '', ledgerItems, ledgerHistory),
         }))
-      : [{ name: '', quantity: '', unit: '', unit_price: '', line_total: '', ledger: '', ai: null }],
+      : [{ name: '', quantity: '', unit: '', unit_price: '', line_total: '', tax: '', ledger: '', ai: null }],
   )
 
   const update = (i: number, key: keyof Row, value: string) =>
     setRows(rows.map((r, j) => (j === i ? { ...r, [key]: value } : r)))
 
-  // 계산 확인: 수량 × 단가 = 금액, 금액 합 = 합계
+  // 꼭 필요한 것: 품목명 · 수량 · 공급가. 단가는 (공급가 + 세액) ÷ 수량으로 계산해 기록 (전표의 단가 칸은 참고용, 선택)
+  const amountOf = (r: Row) => (num(r.line_total) ?? 0) + (num(r.tax) ?? 0)
   const rowWarn = rows.map((r) => {
+    const q = num(r.quantity),
+      t = num(r.line_total)
+    if (!r.name.trim()) return '품목명을 적어 주세요'
+    if (q == null || q <= 0) return '수량을 적어 주세요'
+    if (t == null) return '공급가를 적어 주세요'
+    return null
+  })
+  // 전표의 단가 × 수량이 공급가(또는 공급가+세액)와 다르면 알려만 줌 (확정은 됨)
+  const rowNote = rows.map((r) => {
     const q = num(r.quantity),
       p = num(r.unit_price),
       t = num(r.line_total)
-    if (!r.name.trim() || q == null || p == null || t == null) return '빈 칸'
-    return Math.abs(q * p - t) > 1 ? `수량×단가=${won(q * p)}` : null
+    return q != null && p != null && t != null && Math.abs(q * p - t) > 1 && Math.abs(q * p - amountOf(r)) > 1
+      ? `전표 단가×수량=${won(q * p)} (공급가와 다름)`
+      : null
   })
-  const sum = rows.reduce((s, r) => s + (num(r.line_total) ?? 0), 0)
+  const sum = rows.reduce((s, r) => s + amountOf(r), 0)
   const totalNum = num(total)
   const totalWarn = totalNum != null && Math.abs(sum - totalNum) > 1
   const warnings = rowWarn.filter(Boolean).length + (totalWarn ? 1 : 0)
@@ -141,6 +154,7 @@ export function ConfirmForm({
     unit: r.unit.trim() || null,
     unit_price: num(r.unit_price),
     line_total: num(r.line_total),
+    tax: num(r.tax),
     ledger_item: r.ledger || null,
     ai_line: r.ai,
   }))
@@ -188,21 +202,32 @@ export function ConfirmForm({
                 <input value={r.unit} onChange={(e) => update(i, 'unit', e.target.value)} />
               </label>
               <label>
-                단가(원)
-                <input
-                  value={r.unit_price}
-                  onChange={(e) => update(i, 'unit_price', e.target.value)}
-                  inputMode="numeric"
-                />
-              </label>
-              <label>
-                금액(원)
+                공급가(원)
                 <input
                   value={r.line_total}
                   onChange={(e) => update(i, 'line_total', e.target.value)}
                   inputMode="numeric"
                 />
               </label>
+              <label>
+                세액(원, 선택)
+                <input value={r.tax} onChange={(e) => update(i, 'tax', e.target.value)} inputMode="numeric" />
+              </label>
+              <label>
+                전표 단가(원, 선택)
+                <input
+                  value={r.unit_price}
+                  onChange={(e) => update(i, 'unit_price', e.target.value)}
+                  inputMode="numeric"
+                />
+              </label>
+              <div className="receipt-calc">
+                <span>기록될 금액 · 단가</span>
+                <strong>
+                  {won(amountOf(r))}
+                  {num(r.quantity) ? ` · ${won(amountOf(r) / num(r.quantity)!)}` : ''}
+                </strong>
+              </div>
             </div>
             <label>
               장부 품목
@@ -226,6 +251,7 @@ export function ConfirmForm({
               </select>
             </label>
             {rowWarn[i] && <span className="small text-danger">⚠️ {rowWarn[i]}</span>}
+            {rowNote[i] && <span className="small text-warn">참고: {rowNote[i]}</span>}
           </div>
         ))}
       </div>
@@ -235,7 +261,7 @@ export function ConfirmForm({
           onClick={() =>
             setRows([
               ...rows,
-              { name: '', quantity: '', unit: '', unit_price: '', line_total: '', ledger: '', ai: null },
+              { name: '', quantity: '', unit: '', unit_price: '', line_total: '', tax: '', ledger: '', ai: null },
             ])
           }
         >
@@ -243,7 +269,7 @@ export function ConfirmForm({
         </button>
       </p>
       <p>
-        품목 금액 합: <strong>{won(sum)}</strong> · 전표 합계{' '}
+        품목 금액 합(공급가+세액): <strong>{won(sum)}</strong> · 전표 합계{' '}
         <input
           name="total_amount"
           value={total}
@@ -255,7 +281,7 @@ export function ConfirmForm({
         {totalWarn && (
           <strong className="text-danger">
             {' '}
-            ⚠️ 품목 합과 {won(Math.abs(sum - (totalNum ?? 0)))} 차이 (부가세 별도 전표인지 확인)
+            ⚠️ 품목 합과 {won(Math.abs(sum - (totalNum ?? 0)))} 차이 (세액 칸을 빠뜨렸는지 확인)
           </strong>
         )}
       </p>

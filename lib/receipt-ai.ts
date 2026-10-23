@@ -20,8 +20,12 @@ export const ReceiptProposalSchema = z.object({
         name: z.string().describe('품목명 (사진에 적힌 그대로)'),
         quantity: z.number().nullable().describe('수량. 안 보이면 null'),
         unit: z.string().nullable().describe('단위 (kg, 박스, 개 등). 없으면 null'),
-        unit_price: z.number().nullable().describe('단가 (원). 안 보이면 null'),
-        line_total: z.number().nullable().describe('그 줄의 금액 (원). 안 보이면 null'),
+        unit_price: z.number().nullable().describe('전표에 적힌 단가 (원). 안 보이면 null'),
+        line_total: z
+          .number()
+          .nullable()
+          .describe('그 줄의 공급가(공급가액, 원). 세액이 따로 없는 전표면 그 줄의 금액. 안 보이면 null'),
+        tax: z.number().nullable().describe('그 줄의 세액(부가세, 원). 세액 칸이 없거나 비어 있으면 null'),
       }),
     )
     .describe('품목 줄. 공급가액·부가세·합계 줄은 넣지 않음'),
@@ -34,7 +38,9 @@ function prompt(photoCount: number, hints: string) {
   return `이 사진 ${photoCount}장은 한식당이 거래처(식자재 업체 등)에서 받은 전표(거래명세표 또는 영수증)입니다.
 여러 장이면 한 전표의 이어지는 페이지일 수 있으니, 품목을 한 번씩만 모아 주세요.
 
-품목마다 품목명, 수량, 단위, 단가, 금액을 읽어 주세요.
+품목마다 품목명, 수량, 단위, 공급가(공급가액), 세액, 단가를 읽어 주세요.
+- 거래명세표에 "공급가액"과 "세액" 칸이 따로 있으면 line_total에 공급가액, tax에 세액을 넣어 주세요.
+- 세액 칸이 없는 영수증이면 line_total에 그 줄 금액을 넣고 tax는 null로 두세요.
 - 사진에 적힌 그대로 읽고, 보이지 않거나 확실하지 않은 값은 추측하지 말고 null로 두고 notes에 적어 주세요.
 - 금액은 원 단위 숫자만 (쉼표·"원" 없이).
 - 날짜는 YYYY-MM-DD 형식.
