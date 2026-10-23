@@ -287,6 +287,20 @@ export async function sendDayLaborToSheet(month: string, sentBy: string) {
   return reply
 }
 
+// 일용직 주민번호 → 그 달 인건비 탭 일용직 구역의 주민번호 칸에 바로 적음. 앱에는 저장하지 않음.
+export async function sendDayLaborRrnToSheet(month: string, name: string, rrn: string) {
+  const [year, mon] = month.split('-').map(Number)
+  return (await callScript(await getSheetSettings(), {
+    type: 'day_labor_rrn',
+    year,
+    month: mon,
+    tabName: `${mon}월 인건비`,
+    templateName: 'X월 인건비',
+    name,
+    rrn,
+  })) as LaborReply
+}
+
 // 사장님이 구글 시트에 붙여 넣을 Apps Script 코드 (비밀값이 들어 있음)
 export function appsScriptSource(secret: string) {
   return `// 매장 운영 관리 앱 → 이 시트로 전표 받기
@@ -301,6 +315,7 @@ function doPost(e) {
   if (body.type === 'ping') return reply({ ok: true, sheetName: ss.getName(), url: ss.getUrl() });
   if (body.type === 'labor') return reply(writeLabor(ss, body));
   if (body.type === 'day_labor') return reply(writeDayLabor(ss, body));
+  if (body.type === 'day_labor_rrn') return reply(writeDayLaborRrn(ss, body));
   if (body.type !== 'receipt') return reply({ ok: false, error: '알 수 없는 요청' });
 
   const lock = LockService.getScriptLock();
@@ -411,60 +426,65 @@ function writeLabor(ss, body) {
   }
 }
 
-// ---------- 인건비 탭의 일용직 구역에 일용 근무 넣기 ----------
-// "성함" 제목 줄 아래 구역에서 이름으로 줄을 찾아(없으면 빈 줄에 이름 추가) 날짜 칸에 근무시간을 넣음.
-// 일급·추가근무 수당은 그 칸의 메모로 남김. 수식 칸과 주민번호 칸은 건드리지 않음.
+// ---------- 인건비 탭의 일용직 구역 ----------
+// "성함" 제목 줄 아래, "총 근로 시간"(H열) 수식이 이어지는 줄들. 탭이 없으면 "X월 인건비"를 복사해 만듦.
+function openDayLaborSection(ss, body) {
+  let sh = ss.getSheetByName(body.tabName);
+  let created = false;
+  if (!sh) {
+    const tpl = ss.getSheetByName(body.templateName);
+    if (!tpl) return { error: '"' + body.tabName + '" 탭도, 복사할 "' + body.templateName + '" 탭도 없습니다.' };
+    sh = tpl.copyTo(ss).setName(body.tabName);
+    sh.getRange('B2').setValue(body.year);
+    sh.getRange('C2').setValue(body.month);
+    SpreadsheetApp.flush();
+    created = true;
+  }
+  const lastRow = sh.getLastRow();
+  const lastCol = sh.getLastColumn();
+  const names = sh.getRange(1, 1, lastRow, 1).getDisplayValues().map(function (r) { return String(r[0]).trim(); });
+  const headerRow = names.indexOf('성함') + 1;
+  if (headerRow === 0) return { error: '"' + body.tabName + '" 탭에서 일용직 구역("성함" 제목 줄)을 찾지 못했습니다.' };
+  const head = sh.getRange(headerRow, 1, 1, lastCol).getValues()[0];
+  const hCol = sh.getRange(headerRow + 1, 8, Math.max(1, lastRow - headerRow), 1).getFormulas();
+  let count = 0;
+  while (count < hCol.length && hCol[count][0] !== '') count++;
+  return { sh: sh, created: created, names: names, headerRow: headerRow, head: head, count: count };
+}
+
+// 이름이 같은 줄 번호 (없으면 빈 줄에 이름을 적고 그 줄). 빈 줄도 없으면 -1
+function dayLaborRow(sec, name, added) {
+  for (let i = 0; i < sec.count; i++) if (sec.names[sec.headerRow + i] === name) return sec.headerRow + 1 + i;
+  for (let i = 0; i < sec.count; i++) {
+    if (sec.names[sec.headerRow + i] === '') {
+      sec.sh.getRange(sec.headerRow + 1 + i, 1).setValue(name);
+      sec.names[sec.headerRow + i] = name;
+      added.push(name);
+      return sec.headerRow + 1 + i;
+    }
+  }
+  return -1;
+}
+
+// 날짜 칸에 근무시간, 칸 메모에 일급·추가근무 수당. 수식 칸과 주민번호 칸은 건드리지 않음.
 function writeDayLabor(ss, body) {
   const lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    let sh = ss.getSheetByName(body.tabName);
-    let created = false;
-    if (!sh) {
-      const tpl = ss.getSheetByName(body.templateName);
-      if (!tpl) return { ok: false, error: '"' + body.tabName + '" 탭도, 복사할 "' + body.templateName + '" 탭도 없습니다.' };
-      sh = tpl.copyTo(ss).setName(body.tabName);
-      sh.getRange('B2').setValue(body.year);
-      sh.getRange('C2').setValue(body.month);
-      SpreadsheetApp.flush();
-      created = true;
-    }
-    const lastRow = sh.getLastRow();
-    const lastCol = sh.getLastColumn();
-    const names = sh.getRange(1, 1, lastRow, 1).getDisplayValues().map(function (r) { return String(r[0]).trim(); });
-    const headerRow = names.indexOf('성함') + 1;
-    if (headerRow === 0) return { ok: false, error: '"' + body.tabName + '" 탭에서 일용직 구역("성함" 제목 줄)을 찾지 못했습니다.' };
-
-    const head = sh.getRange(headerRow, 1, 1, lastCol).getValues()[0];
+    const sec = openDayLaborSection(ss, body);
+    if (sec.error) return { ok: false, error: sec.error };
     const dayCol = {};
-    head.forEach(function (v, i) {
+    sec.head.forEach(function (v, i) {
       if (v instanceof Date && v.getMonth() + 1 === Number(body.month)) dayCol[v.getDate()] = i + 1;
     });
-    // 직원 줄: 제목 바로 아래부터 "총 근로 시간"(H열) 수식이 이어지는 곳까지
-    const hCol = sh.getRange(headerRow + 1, 8, Math.max(1, lastRow - headerRow), 1).getFormulas();
-    let count = 0;
-    while (count < hCol.length && hCol[count][0] !== '') count++;
-
-    const result = { ok: true, sheetName: ss.getName(), tab: body.tabName, created: created, written: [], added: [], unmatched: [] };
+    const result = { ok: true, sheetName: ss.getName(), tab: body.tabName, created: sec.created, written: [], added: [], unmatched: [] };
     (body.workers || []).forEach(function (w) {
-      let row = -1;
-      for (let i = 0; i < count; i++) if (names[headerRow + i] === w.name) { row = headerRow + 1 + i; break; }
-      if (row === -1) {
-        for (let i = 0; i < count; i++) {
-          if (names[headerRow + i] === '') {
-            row = headerRow + 1 + i;
-            sh.getRange(row, 1).setValue(w.name);
-            names[headerRow + i] = w.name;
-            result.added.push(w.name);
-            break;
-          }
-        }
-      }
+      const row = dayLaborRow(sec, w.name, result.added);
       if (row === -1) { result.unmatched.push(w.name + ' (빈 줄 없음)'); return; }
       Object.keys(w.days).forEach(function (d) {
         const col = dayCol[Number(d)];
         if (!col) return;
-        const cell = sh.getRange(row, col);
+        const cell = sec.sh.getRange(row, col);
         const v = w.days[d];
         if (v === null) { cell.setValue(''); cell.setNote(''); return; }
         cell.setValue(v.hours);
@@ -473,6 +493,27 @@ function writeDayLabor(ss, body) {
       result.written.push(w.name);
     });
     return result;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 주민번호를 그 사람 줄의 주민번호 칸에 글자 그대로 적음 (앱에는 저장하지 않음)
+function writeDayLaborRrn(ss, body) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sec = openDayLaborSection(ss, body);
+    if (sec.error) return { ok: false, error: sec.error };
+    let col = 2;
+    sec.head.forEach(function (v, i) { if (String(v).replace(/\\s/g, '').indexOf('주민') !== -1) col = i + 1; });
+    const added = [];
+    const row = dayLaborRow(sec, body.name, added);
+    if (row === -1) return { ok: false, error: '일용직 구역에 빈 줄이 없어 ' + body.name + ' 님을 넣지 못했습니다.' };
+    const cell = sec.sh.getRange(row, col);
+    cell.setNumberFormat('@');
+    cell.setValue(body.rrn);
+    return { ok: true, tab: body.tabName, created: sec.created, added: added };
   } finally {
     lock.releaseLock();
   }

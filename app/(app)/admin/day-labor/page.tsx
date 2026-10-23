@@ -86,8 +86,8 @@ export default async function DayLaborPage({
         <h1>일용직</h1>
       </div>
       <p className="small muted">
-        일용 근무자의 근무를 적어 두고, 손익계산서 &quot;{m}월 인건비&quot; 탭의 일용직 구역으로 보냅니다. 주민번호 같은
-        개인정보는 앱에 적지 말고 시트에서 직접 관리하세요.
+        일용 근무자의 근무를 적어 두고, 손익계산서 &quot;{m}월 인건비&quot; 탭의 일용직 구역으로 보냅니다. 주민번호는
+        앱에 저장하지 않고 입력할 때 시트에 바로 적습니다.
       </p>
       {error && <p className="alert alert-error">{error}</p>}
       {ok && <p className="alert alert-ok">{ok}</p>}
@@ -107,6 +107,19 @@ export default async function DayLaborPage({
           <label>
             이름
             <input name="worker_name" required list="day-labor-names" placeholder="예: 홍길동" />
+          </label>
+          <label>
+            주민번호 (처음 한 번만)
+            <input
+              name="rrn"
+              type="password"
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={14}
+              placeholder={sheetConnected ? '이미 시트에 있으면 비워 두세요' : '구글 시트 연결 후 입력 가능'}
+              disabled={!sheetConnected}
+            />
+            <span className="small muted">앱에는 저장하지 않고 손익계산서 일용직 칸에 바로 적습니다.</span>
           </label>
           <label>
             근무시간 (시간)
@@ -250,7 +263,7 @@ export default async function DayLaborPage({
         <p className="small muted">
           손익계산서 &quot;{m}월 인건비&quot; 탭의 <strong>일용직 구역(&quot;성함&quot; 줄 아래)</strong>에서 이름이
           같은 줄을 찾아 날짜 칸에 근무시간을 넣습니다. 일급·추가근무 수당은 그 칸의 메모로 남깁니다. 시트에 없는 이름은
-          빈 줄에 추가합니다(주민번호는 시트에서 직접). 앱에서 지운 기록의 칸은 비웁니다. 수식 칸은 건드리지 않습니다.
+          빈 줄에 추가합니다. 앱에서 지운 기록의 칸은 비웁니다. 수식 칸은 건드리지 않습니다.
         </p>
         {sheetConnected ? (
           <form action={sendDayLaborSheet}>

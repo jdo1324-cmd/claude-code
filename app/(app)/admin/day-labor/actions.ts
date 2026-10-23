@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { isMonth } from '@/lib/attendance'
 import { requireAdmin } from '@/lib/auth'
-import { sendDayLaborToSheet } from '@/lib/google-sheet'
+import { sendDayLaborRrnToSheet, sendDayLaborToSheet } from '@/lib/google-sheet'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 function back(month: string, key: 'ok' | 'error', message: string): never {
@@ -32,6 +32,16 @@ export async function addDayLabor(formData: FormData) {
   if (!Number.isInteger(wage) || wage < 0) back(month, 'error', '일급은 원 단위 숫자로 적어 주세요.')
   if (!Number.isInteger(extra) || extra < 0) back(month, 'error', '추가근무 수당은 원 단위 숫자로 적어 주세요.')
 
+  // 주민번호는 앱에 저장하지 않고 손익계산서 일용직 구역의 주민번호 칸에 바로 적음
+  const rrnDigits = String(formData.get('rrn') ?? '').replace(/[\s-]/g, '')
+  let rrnNote = ''
+  if (rrnDigits) {
+    if (!/^\d{13}$/.test(rrnDigits)) back(month, 'error', '주민번호는 숫자 13자리로 적어 주세요. (예: 900101-1234567)')
+    const reply = await sendDayLaborRrnToSheet(month, name, `${rrnDigits.slice(0, 6)}-${rrnDigits.slice(6)}`)
+    if (!reply.ok) back(month, 'error', '주민번호를 구글 시트에 적지 못해 기록도 저장하지 않았습니다: ' + reply.error)
+    rrnNote = ` 주민번호는 "${reply.tab}" 탭에 적었습니다(앱에는 저장 안 함).`
+  }
+
   const { error } = await createAdminClient()
     .from('day_labor_entries')
     .insert({
@@ -44,7 +54,7 @@ export async function addDayLabor(formData: FormData) {
       created_by: me.id,
     })
   if (error) back(month, 'error', '저장하지 못했습니다: ' + error.message)
-  back(month, 'ok', `${date} ${name} 기록을 추가했습니다.`)
+  back(month, 'ok', `${date} ${name} 기록을 추가했습니다.${rrnNote}`)
 }
 
 // 잘못 적은 기록 지우기 (기록은 "지움"으로 남고, 다음 시트 전송 때 그 칸을 비움)
@@ -70,7 +80,7 @@ export async function sendDayLaborSheet(formData: FormData) {
     `"${reply.tab}" 탭 일용직 구역에 ${reply.written?.length ?? 0}명의 기록을 넣었습니다.`,
     reply.created && '탭이 없어서 "X월 인건비"를 복사해 새로 만들었습니다.',
     reply.added?.length &&
-      `시트에 없던 이름을 빈 줄에 추가: ${reply.added.join(', ')} (주민번호는 시트에서 직접 적어 주세요)`,
+      `시트에 없던 이름을 빈 줄에 추가: ${reply.added.join(', ')} (주민번호 칸이 비어 있으면 시트에서 적어 주세요)`,
     reply.unmatched?.length && `⚠️ 넣지 못한 사람: ${reply.unmatched.join(', ')}`,
   ].filter(Boolean)
   back(month, reply.unmatched?.length ? 'error' : 'ok', parts.join('\n'))
