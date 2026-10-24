@@ -42,7 +42,7 @@ export default async function ChecklistPage({
       path && photoUrls[path] ? (
         <a href={photoUrls[path]} target="_blank" rel="noreferrer" className="photo-thumb">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={photoUrls[path]} alt={`${item.title} ${label}`} />
+          <img src={photoUrls[path]} alt={`${item.title} ${label}`} loading="lazy" decoding="async" />
           <span>{label}</span>
         </a>
       ) : null

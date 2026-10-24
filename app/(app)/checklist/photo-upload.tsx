@@ -29,7 +29,7 @@ export function PhotoUpload({
     setBusy(true)
     setError(null)
     try {
-      const blob = await shrinkImage(file)
+      const blob = await shrinkImage(file, 1280, { quality: 0.75 }) // 확인용 사진이라 작게 (한 장 150KB 안팎)
       const ext = IMAGE_EXT[blob.type]
       if (!ext) throw new Error('사진 파일만 올릴 수 있습니다.')
       // 폴더 = 오늘 날짜 (저장소 규칙상 오늘 폴더에만 올릴 수 있음)

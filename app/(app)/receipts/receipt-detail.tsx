@@ -89,6 +89,7 @@ export async function ReceiptDetail({
                 <img
                   src={u.signedUrl}
                   alt={`전표 ${i + 1}장`}
+                  decoding="async"
                   style={{ width: '100%', maxWidth: 520, border: '1px solid var(--border)', marginBottom: 8 }}
                 />
               </a>

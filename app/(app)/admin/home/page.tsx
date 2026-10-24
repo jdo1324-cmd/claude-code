@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { RealtimeRefresh } from '@/app/components/realtime-refresh'
+import { isWebPushEnabled } from '@/lib/alert-settings'
 import { findAlerts } from '@/lib/alerts'
 import { requireAdmin, type Profile } from '@/lib/auth'
 import { PHASES, PHASE_LABEL, loadChecklist, progress } from '@/lib/checklist'
@@ -21,6 +22,7 @@ export default async function AdminHomePage() {
     { count: receiptCount },
     checklist,
     alerts,
+    webPush,
   ] = await Promise.all([
     supabase.from('sales_reports').select(SALES_SELECT).eq('work_date', today).eq('status', 'valid').maybeSingle(),
     supabase
@@ -36,6 +38,7 @@ export default async function AdminHomePage() {
       .in('status', ['processing', 'proposed', 'failed']),
     loadChecklist(supabase, today),
     findAlerts(supabase, today, 7),
+    isWebPushEnabled(),
   ])
 
   const report = salesData as unknown as SalesReport | null
@@ -66,7 +69,7 @@ export default async function AdminHomePage() {
         <h1>{me.role === 'owner' ? '사장님' : '관리자'} 홈</h1>
         <span className="muted">{today}</span>
       </div>
-      <PushSetup />
+      {webPush && <PushSetup />}
 
       <div className="grid">
         <section className="card">

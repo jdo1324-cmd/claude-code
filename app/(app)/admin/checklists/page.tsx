@@ -140,6 +140,8 @@ export default async function ChecklistHistoryPage({
                                       <img
                                         src={photoUrls[path]}
                                         alt={`${item.title} ${label}`}
+                                        loading="lazy"
+                                        decoding="async"
                                         style={{ height: 60 }}
                                       />
                                       <span>{label}</span>

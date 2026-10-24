@@ -2,33 +2,51 @@
 
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 
-// 다른 직원이 체크하면(DB 변경) 이 화면을 바로 다시 불러옴 (Supabase Realtime)
+// 다른 직원이 체크하면(DB 변경) 이 화면을 다시 불러옴 (Supabase Realtime)
+// - Supabase 클라이언트(큰 파일)는 화면이 다 뜬 뒤에 따로 불러옴
+// - 짧은 시간에 여러 건이 바뀌면 1.5초 모아서 한 번만 새로고침
+// - 휴대폰 화면을 다시 켰을 때는 30초 이상 지났을 때만 새로고침
 export function RealtimeRefresh({ table, filter }: { table: string; filter?: string }) {
   const router = useRouter()
 
   useEffect(() => {
-    const supabase = createClient()
-    let channel: ReturnType<typeof supabase.channel> | null = null
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let hiddenAt = 0
+    let cleanup = () => {}
 
-    supabase.auth.getSession().then(({ data }) => {
+    const refresh = () => {
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => router.refresh(), 1500)
+    }
+
+    import('@/lib/supabase/client').then(async ({ createClient }) => {
+      if (cancelled) return
+      const supabase = createClient()
+      const { data } = await supabase.auth.getSession()
+      if (cancelled) return
       if (data.session) supabase.realtime.setAuth(data.session.access_token)
-      channel = supabase
+      const channel = supabase
         .channel(`refresh-${table}-${filter ?? 'all'}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table, filter }, () => router.refresh())
+        .on('postgres_changes', { event: '*', schema: 'public', table, filter }, refresh)
         .subscribe()
+      cleanup = () => {
+        supabase.removeChannel(channel)
+      }
     })
 
-    // 휴대폰 화면을 껐다 켜면(다시 보면) 최신 상태로
     const onVisible = () => {
-      if (document.visibilityState === 'visible') router.refresh()
+      if (document.visibilityState === 'hidden') hiddenAt = Date.now()
+      else if (hiddenAt && Date.now() - hiddenAt > 30_000) router.refresh()
     }
     document.addEventListener('visibilitychange', onVisible)
 
     return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisible)
-      if (channel) supabase.removeChannel(channel)
+      cleanup()
     }
   }, [router, table, filter])
 
